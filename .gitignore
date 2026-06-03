@@ -1,2 +1,4 @@
-data.zip
-llm_sdk.zip
+venv
+.mypy_cache
+data
+llm_cache
