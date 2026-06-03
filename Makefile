@@ -1,5 +1,5 @@
 # ── Configuración del entorno virtual ────────────────────────────
-VENV        = venv
+VENV        = .venv
 PYTHON      = $(VENV)/bin/python3
 PIP         = $(VENV)/bin/pip
 
@@ -72,7 +72,7 @@ lint-strict: venv
 	$(PYTHON) -m flake8 . $(FLAKE8_EXCLUDE) || status=1; \
 	echo ""; \
 	echo "=========== MYPY ===========" ; \
-	$(PYTHON) -m mypy . --strict $(MYPY_FLAGS) $(MYPY_EXCLUDE) || status=1; \
+	$(PYTHON) -m mypy . --strict $(MYPY_EXCLUDE) || status=1; \
 	echo ""; \
 	exit $$status
 
