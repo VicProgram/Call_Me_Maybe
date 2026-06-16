@@ -1,4 +1,16 @@
-# ── Configuración del entorno virtual ────────────────────────────
+export STORAGE:=/home/$(shell whoami)/sgoinfre/vic_cache
+
+export UV_CACHE_DIR:=$(STORAGE)/uv-cache
+export UV_PROJECT_ENVIRONMENT:=$(STORAGE)/venv
+export UV_PYTHON_INSTALL_DIR:=$(STORAGE)/python
+
+export HF_HOME:=$(STORAGE)/huggingface
+export HF_HUB_CACHE:=$(HF_HOME)/hub
+
+export TMPDIR=$(STORAGE)/tmp
+
+#directory changed to achieve space
+
 VENV        = .venv
 PYTHON      = $(VENV)/bin/python3
 PIP         = $(VENV)/bin/pip
@@ -37,12 +49,13 @@ install: venv
 
 
 run: venv
-	uv run python3 $(MAIN) $(CONFIG)
+	uv run $(MAIN) 
+# 	$(CONFIG)
 
 
-debug: venv
-	@echo "Starting debugger (pdb)..."
-	uv run -m python3 pdb $(MAIN) $(CONFIG)
+# debug: venv
+# 	@echo "Starting debugger (pdb)..."
+# 	uv run -m python3 pdb $(MAIN) $(CONFIG)
 
 
 lint:
@@ -71,21 +84,22 @@ lint-strict:
 
 
 clean:
-	@echo "Cleaning temporary files..."
+	@echo "Cleaning temporary files...\n"
 
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete
 	find . -name "*.pyo" -delete
+	rm -rf data/output
 
 	rm -rf .mypy_cache
 	rm -f $(OUTPUT_FILE)
 
-	@echo "Removing virtual environment..."
+	@echo "\nRemoving virtual environment...\n"
+	rm -rf .mypy_cache .pytest_cache .ruff_cache
 	rm -rf $(VENV)
 
-build:
-	$(PYTHON) -m build
-
+	@echo "\n cleaning uv cache\n"
+	uv cache clear
 
 re: clean all
 

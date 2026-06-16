@@ -1,10 +1,29 @@
 [project]
 name = "call-me-maybe"
 version = "0.1.0"
-description = "Add your description here"
+description = "Function calling tool with constrained decoding for a local LLM."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "numpy>=2.2.6",
-    "pydantic>=2.13.4",
+    "numpy",
+    "pydantic",
+	 "llm-sdk"
 ]
+
+[tool.uv.sources]
+llm-sdk = { path = "llm_sdk" }
+
+[dependency-groups]
+dev = [
+    "flake8",
+    "mypy",
+    "pytest",
+]
+
+[tool.mypy]
+exclude = ["^\\.venv/", "^llm_sdk/"]
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
+check_untyped_defs = true

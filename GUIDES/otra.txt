@@ -1,0 +1,85 @@
+Viendo el enfoque de tu compañero, queda claro que su código intenta solucionar **dos problemas a la vez**:
+saber en qué parte del JSON está (Fase del JSON) y validar si los caracteres individuales son correctos (Validación de texto).
+Eso hace que la función sea gigantesca, difícil de mantener y muy propensa a fallar si la *Moulinette* te pide un cambio en la evaluación.
+
+Si yo tuviera que empezar el proyecto desde cero hoy mismo, aplicaría el principio de **"Divide y vencerás"**, separando la estructura del JSON de la lógica de validación de caracteres.
+
+Aquí tienes la estrategia exacta de cómo lo empezaría, paso a paso:
+
+---
+
+## Paso 1: Definir las "Fases" de tu JSON (Una Máquina de Estados)
+
+En lugar de un montón de `if` encadenados que miden la longitud del texto (`curlen > len(expected)`), es mucho más limpio definir en qué **Estado** o **Fase** del JSON te encuentras.
+
+Puedes definir tus estados usando un `Enum` básico o simples strings:
+
+1. `START`: Esperando el `{`.
+2. `PROMPT_KEY`: Esperando `"prompt":`.
+3. `PROMPT_VALUE`: Copiando el prompt original.
+4. `FN_KEY`: Esperando `"fn_name":`.
+5. 
+`FN_VALUE`: Validando el nombre de la función.
+6. 
+`ARGS_KEY`: Esperando `"args":{`. 
+7. 
+`ARGS_VALUE`: Validando los parámetros según su tipo (`number`, `string`, etc.).
+8. `END`: Esperando las llaves de cierre `}}`.
+---
+
+## Paso 2: Crear el Validador de Tipos Primitivos (Limpio y Aislado)
+
+Antes de meterte con el LLM, crearía funciones independientes y muy fáciles de testear para cada tipo de dato JSON. No las mezcles dentro de un bucle gigante. Escribe funciones sencillas:
+
+* `is_valid_partial_number(text: str) -> bool`: Que acepte `-`, `4`, `42`, `42.` y `42.5`. (Usa expresiones regulares sencillas o lógica de caracteres).
+* `is_valid_partial_string(text: str) -> bool`: Que revise que empiece por `"` y gestione si las comillas internas están escapadas con `\`.
+* `is_valid_partial_boolean(text: str) -> bool`: Que acepte prefijos de `true` o `false` (ej: `t`, `tr`, `tru`, `true`).
+
+*Ventaja de 42:* Si en la evaluación te piden añadir el tipo `boolean` (como le pasó a tu compañero) o un tipo `array`,
+solo tendrás que programar una función pequeña y añadirla, sin romper el resto de tu código.
+
+---
+
+## Paso 3: La Función de Transición
+
+Con los pasos 1 y 2 listos, crearía una función principal que simplemente pregunte:
+
+> 
+> "Si estoy en el estado `FN_VALUE` y el token actual es `X`, ¿sigue siendo el nombre de una función válida de mis `definitions.json`? 
+Si es así, mantén el estado. Si el token añade una comilla de cierre y una coma `",`, pasa al estado `ARGS_KEY`".
+> 
+> 
+
+Esta estructura hace que tu código pase de tener 300 líneas en una sola función a tener pequeños bloques de 15 líneas hiper-especializados.
+
+---
+
+## Paso 4: El Bucle de Generación (Conectar el SDK)
+
+Una vez que tu validador de prefijos funciona perfectamente de forma local con strings de prueba, es el momento de encender el LLM.
+
+El bucle del programa principal debería hacer esto para cada prompt:
+
+1. Inicializar el texto acumulado como `{"prompt": "`.
+2. Añadir el prompt del usuario y cerrarlo: `", "fn_name": "`.
+3. Pedir los *logits* al SDK pasándole los IDs de ese texto acumulado.
+
+
+4. 
+**Filtrar los Logits (El núcleo del proyecto):** Recorres el vocabulario del modelo token por token. Le preguntas a tu validador:
+*"Si junto mi texto acumulado con este token del vocabulario, ¿sigue siendo válido?"*.
+
+
+* Si la respuesta es **No**, penalizas ese token poniéndole un logit de $-\infty$.
+
+
+* Si la respuesta es **Sí**, dejas el logit intacto.
+
+
+
+
+5. Seleccionas el token con el logit más alto restante, lo decodificas, lo sumas a tu texto acumulado y repites el proceso hasta llegar al cierre `}}`.
+
+
+
+Comenzar separando la **estructura** de la **validación de caracteres** te ahorrará horas de dolores de cabeza arreglando bugs donde una comilla o un espacio en blanco rompan todo tu sistema.

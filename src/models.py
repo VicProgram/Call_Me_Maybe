@@ -1,5 +1,7 @@
 from typing import Any
 from pydantic import BaseModel
+from llm_sdk import Small_LLM_Model  # type: ignore[attr-defined]
+
 
 
 class ParameterDefinition(BaseModel):
@@ -12,3 +14,8 @@ class FunctionDefinition(BaseModel):
 
 class FunctionCall(BaseModel):
     """Representa el resultado de una llamada a función."""
+
+
+
+my_model=Small_LLM_Model()
+
