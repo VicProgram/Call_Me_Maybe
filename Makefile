@@ -9,54 +9,21 @@ export HF_HUB_CACHE:=$(HF_HOME)/hub
 
 export TMPDIR=$(STORAGE)/tmp
 
-#directory changed to achieve space
-
-VENV        = .venv
-PYTHON      = $(VENV)/bin/python3
-PIP         = $(VENV)/bin/pip
-
-
-MAIN        = src/__main__.py
-CONFIG      = config.txt
-REQS        = requirements.txt
-# OUTPUT_FILE = 
-
-
 MYPY_FLAGS  = --warn-return-any \
               --warn-unused-ignores \
               --ignore-missing-imports \
               --disallow-untyped-defs \
               --check-untyped-defs
 
-
-FLAKE8_EXCLUDE = --exclude=$(VENV),data,llm_sdk
-MYPY_EXCLUDE   = --exclude $(VENV) --exclude data --exclude llm_sdk
-
+FLAKE8_EXCLUDE = --exclude=data,llm_sdk,venv
+MYPY_EXCLUDE   = --exclude --exclude data --exclude llm_sdk --exclude venv
 
 all: install run
 
-
-venv:
-	@if [ ! -d "$(VENV)" ]; then \
-		echo "Creating virtual environment..."; \
-		uv venv $(VENV); \
-	fi
-
-
-install: venv
-	@echo "Installing dependencies from $(REQS)..."
-	uv pip install -r $(REQS)
-
-
-run: venv
-	uv run $(MAIN) 
-# 	$(CONFIG)
-
-
-# debug: venv
-# 	@echo "Starting debugger (pdb)..."
-# 	uv run -m python3 pdb $(MAIN) $(CONFIG)
-
+install:
+	uv sync
+run:
+	uv run python3 -m src 
 
 lint:
 	@echo "Comprobando linter..."
@@ -98,10 +65,30 @@ clean:
 	rm -rf .mypy_cache .pytest_cache .ruff_cache
 	rm -rf $(VENV)
 
-	@echo "\n cleaning uv cache\n"
+	@echo "\nCleaning uv cache\n"
 	uv cache clear
 
-re: clean all
 
+fclean:
+	@echo "Cleaning temporary files...\n"
+
+		find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+		find . -name "*.pyc" -delete
+		find . -name "*.pyo" -delete
+		rm -rf data/output
+
+		rm -rf .mypy_cache
+		rm -f $(OUTPUT_FILE)
+
+		@echo "\nRemoving virtual environment...\n"
+		rm -rf .mypy_cache .pytest_cache .ruff_cache
+		rm -rf $(VENV)
+
+		@echo "\nCleaning uv cache\n"
+		uv cache clear
+		@echo "\nCleaning vic_cache\n"
+		rm -rf vic_cache
+
+re: clean all
 
 .PHONY: all venv install run debug lint lint-strict clean re

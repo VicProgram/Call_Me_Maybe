@@ -1,0 +1,854 @@
+He leído el proyecto y te adelanto algo importante: este proyecto no trata de usar un LLM para responder preguntas, sino de construir un sistema que convierta lenguaje natural en llamadas a funciones estructuradas usando un modelo pequeño y decodificación restringida. Esa es la parte difícil y la que realmente evalúan.
+
+Voy a explicártelo como si empezaras desde cero.
+
+1. ¿Qué demonios te están pidiendo realmente?
+
+Te dan:
+
+Un archivo con prompts:
+[
+  "What is the sum of 2 and 3?",
+  "Reverse the string 'hello'"
+]
+
+y otro con funciones disponibles:
+
+[
+  {
+    "name": "fn_add_numbers",
+    "parameters": {
+      "a": {"type":"number"},
+      "b": {"type":"number"}
+    }
+  }
+]
+
+Tu programa debe producir:
+
+[
+  {
+    "prompt": "What is the sum of 2 and 3?",
+    "fn_name": "fn_add_numbers",
+    "args": {
+      "a": 2,
+      "b": 3
+    }
+  }
+]
+
+NO debes devolver:
+
+The result is 5
+
+porque eso estaría mal.
+
+2. ¿Qué conocimientos necesitas?
+
+Para acabar el proyecto necesitas entender estas cosas:
+
+Nivel obligatorio
+A. JSON
+
+Debes dominar:
+
+cargar JSON
+validar JSON
+escribir JSON
+manejar errores si está roto
+
+Porque los archivos pueden estar mal formados.
+
+B. Pydantic
+
+Es obligatorio. Todas las clases deben usarlo.
+
+Debes saber:
+
+BaseModel
+validación de tipos
+model_validate
+model_dump
+C. LLM básico
+
+Entender:
+
+texto
+↓
+tokenización
+↓
+IDs
+↓
+modelo
+↓
+logits
+↓
+siguiente token
+
+El proyecto entero gira alrededor de esto.
+
+D. Decodificación restringida
+
+ESTO ES EL PROYECTO.
+
+Si solo recuerdas una cosa, recuerda esto.
+
+Normalmente el LLM puede generar:
+
+hola
+{
+aaaa
+invalid
+
+Tu trabajo es impedir que eso ocurra.
+
+La idea:
+
+El modelo genera probabilidades.
+Tú eliminas tokens inválidos.
+Solo permites tokens compatibles con el JSON.
+El modelo elige entre ellos.
+
+El PDF lo explica explícitamente.
+
+3. ¿Qué NO debes hacer?
+
+Esto es muy importante:
+
+NO puedes hacer:
+
+"Devuelve un JSON válido"
+
+y rezar.
+
+El PDF dice explícitamente que eso NO es la habilidad evaluada.
+
+4. Arquitectura que te recomiendo
+
+Hazlo en fases.
+
+Fase 1: Conseguir que el modelo genere texto
+
+Objetivo:
+
+Prompt → modelo → salida
+
+Nada más.
+
+Todavía sin JSON.
+
+Fase 2: Entender el SDK
+
+El SDK tiene:
+
+encode()
+decode()
+get_logits_from_input_ids()
+vocabulario JSON
+
+Debes probar:
+
+Prompt 1
+What is 2 + 3?
+Prompt 2
+Reverse hello
+
+Simplemente imprime la salida.
+
+Si genera basura, no importa.
+
+El objetivo es comprobar que el modelo funciona.
+
+5. Primer objetivo real: hacer inferencia token a token
+
+El modelo funciona así:
+
+Prompt
+↓
+encode
+↓
+input_ids
+↓
+logits
+↓
+escoger token
+↓
+añadir token
+↓
+repetir
+
+Tienes que implementar este bucle tú mismo.
+
+6. Primer hito que deberías alcanzar
+
+Conseguir generar:
+
+{
+
+sí, solo eso.
+
+Parece absurdo, pero es enorme.
+
+Porque significa que controlas los tokens.
+
+7. Segundo hito
+
+Generar:
+
+{
+"fn_name":
+
+forzando tokens válidos.
+
+8. Tercer hito
+
+Restringir nombres de funciones
+
+Supongamos:
+
+[
+  "fn_add_numbers",
+  "fn_reverse_string"
+]
+
+Cuando el modelo llegue aquí:
+
+{
+"fn_name":
+
+solo permites tokens que conduzcan a:
+
+fn_add_numbers
+fn_reverse_string
+
+Ningún otro.
+
+Esto es la esencia de la decodificación restringida.
+
+9. Cómo funciona mentalmente la restricción
+
+Imagínate:
+
+El modelo quiere generar:
+
+f
+
+Miras el vocabulario:
+
+fn
+foo
+bar
+hello
+
+Solo permites:
+
+fn
+
+porque es compatible.
+
+Los demás reciben probabilidad:
+
+-∞
+
+tal como describe el PDF.
+
+10. Orden exacto en el que yo haría el proyecto
+Semana 1
+Paso 1
+
+Crear entorno:
+
+uv init
+uv add numpy pydantic
+Paso 2
+
+Copiar:
+
+llm_sdk/
+
+al proyecto.
+
+Paso 3
+
+Crear estructura:
+
+src/
+    __main__.py
+    models.py
+    parser.py
+    generator.py
+    decoder.py
+    io_utils.py
+Paso 4
+
+Leer:
+
+function_calling_tests.json
+function_definitions.json
+
+con manejo de errores.
+
+Paso 5
+
+Crear modelos Pydantic.
+
+Paso 6
+
+Cargar el modelo.
+
+Paso 7
+
+Conseguir imprimir texto generado.
+
+Paso 8
+
+Implementar generación token a token.
+
+Paso 9
+
+Cargar vocabulario JSON del SDK.
+
+El PDF dice que es crucial para mapear tokens↔texto.
+
+Paso 10
+
+Implementar restricciones simples:
+
+Permitir únicamente:
+
+{
+}
+:
+"
+,
+Paso 11
+
+Restringir nombres de funciones.
+
+Paso 12
+
+Restringir argumentos.
+
+Paso 13
+
+Validar salida con Pydantic.
+
+Paso 14
+
+Guardar:
+
+data/output/function_calling_results.json
+
+con el formato exacto exigido.
+
+11. Primeros prompts para probar el modelo
+
+Antes de toda la parte complicada:
+
+What is the sum of 2 and 3?
+Reverse the string hello
+Calculate factorial of 5
+Convert true to string
+Join "abc" and "def"
+
+No importa si responde mal.
+
+Solo quieres comprobar que:
+
+prompt → tokens → logits → generación
+
+funciona.
+
+12. El verdadero reto del proyecto
+
+No es el LLM.
+
+No es Qwen.
+
+Es construir un autómata de JSON que, en cada token, decida:
+
+"¿Qué tokens mantienen un JSON válido y compatible con el esquema?"
+
+Eso es exactamente lo que hacen sistemas como OpenAI Function Calling o Structured Outputs, pero tú lo implementarás manualmente con un modelo pequeño.
+
+Mi recomendación es que tu primer objetivo NO sea resolver el proyecto completo, sino llegar a esto:
+
+Prompt
+↓
+LLM
+↓
+Generación token a token
+↓
+JSON válido mínimo
+
+Una vez eso funcione, el resto es ir añadiendo restricciones cada vez más específicas.
+
+Perfecto. Has encontrado un error muy típico de Python, y entenderlo te va a ayudar bastante.
+
+El error es:
+
+UnboundLocalError: local variable 'Path' referenced before assignment
+
+y ocurre aquí:
+
+print("cwd:", Path.cwd())
+
+pero tú piensas:
+
+"¿Cómo que Path no existe si ya lo importé arriba?"
+
+Porque más abajo haces esto:
+
+from pathlib import Path
+
+dentro de main().
+
+Python ve eso y piensa:
+
+"Ah, Path es una variable local de esta función."
+
+Entonces, toda la función main() considera Path una variable local. Pero intentas usarla antes de asignarla:
+
+print(Path.cwd())   # ← aún no existe la variable local
+...
+from pathlib import Path  # ← aquí se asigna
+
+Por eso falla.
+
+La solución es simplemente eliminar:
+
+from pathlib import Path
+
+de dentro de main(). Ya lo importaste arriba:
+
+from pathlib import Path
+
+y es suficiente.
+
+Ahora vamos a otra cosa: tu json_reader() tiene varios problemas.
+
+Has definido:
+
+def json_reader() -> None:
+
+pero luego llamas:
+
+json_reader(args.input)
+
+Estás pasando un argumento, pero la función no acepta ninguno.
+
+Debería aceptar una ruta:
+
+json_reader(input_path)
+
+porque la idea es que lea desde el directorio que el usuario haya indicado.
+
+Además tienes un typo:
+
+'./data/funcitons_definition.json'
+
+debería ser algo como:
+
+function_definitions.json
+
+(según el PDF).
+
+Y hay otro problema conceptual:
+
+Si el JSON es así:
+
+[
+  {
+    "name": "fn_add_numbers",
+    ...
+  },
+  {
+    "name": "fn_reverse_string",
+    ...
+  }
+]
+
+entonces:
+
+data.get("name")
+
+no funciona, porque data es una lista, no un diccionario.
+
+Debes pensar:
+
+data
+↓
+lista de funciones
+↓
+cada elemento es un diccionario
+↓
+cada diccionario tiene una clave "name"
+
+Mentalmente sería:
+
+for cada función en data:
+    coger función["name"]
+
+Tu objetivo inmediato debería ser conseguir que el programa imprima algo así:
+
+Loaded functions:
+- fn_add_numbers
+- fn_reverse_string
+- fn_factorial
+
+Sin Pydantic todavía.
+
+Sin LLM todavía.
+
+Solo:
+
+leer JSON
+↓
+recorrer lista
+↓
+extraer nombres
+
+Una vez eso funcione, el siguiente paso natural es crear models.py y validar esos JSON con Pydantic. Ahí empieza realmente la arquitectura del proyecto.
+
+import argparse
+import json
+
+def parse_args() -> argparse.Namespace:
+    """Parsea los argumentos de línea de comandos."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', type=Path, default=Path('data/input'))
+    parser.add_argument('--output', type=Path, default=Path('data/output'))
+    return parser.parse_args()
+
+def json_reader() -> None:
+
+    with open('./data/functions_definition.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+        function_list = []
+        for el in data:
+            el.get('name', [])
+            function_list.append(el)
+        print(function_list)
+
+
+def main() -> None:
+    from pathlib import Path
+    """Función principal, entrada al programa."""
+    args = parse_args()
+
+
+    print("Input:", args.input)
+    print("Output:", args.output)
+    print(type(args.input))
+
+    print("---------------------------------------")
+    print("cwd:", Path.cwd())
+    print("input:", args.input.resolve())
+    print("exists:", args.input.exists())
+    print("---------------------------------------")
+
+    from pathlib import Path
+
+    print("Current dir:", Path.cwd())
+    print("Input:", args.input.resolve())
+    print("Exists:", args.input.exists())
+    print("---------------------------------------")
+
+    json_reader()
+
+
+if __name__ == "__main__":
+    main() como ves esto, me da esto : Call_Me_maybe|main⚡ ⇒ make run
+uv run python3 -m src 
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/usr/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/sgoinfre/students/vabad-ro/Call_Me_maybe/src/__main__.py", line 50, in <module>
+    main()
+  File "/sgoinfre/students/vabad-ro/Call_Me_maybe/src/__main__.py", line 26, in main
+    args = parse_args()
+  File "/sgoinfre/students/vabad-ro/Call_Me_maybe/src/__main__.py", line 7, in parse_args
+    parser.add_argument('--input', type=Path, default=Path('data/input'))
+NameError: name 'Path' is not defined
+make: *** [Makefile:26: run] Error 1
+Call_Me_maybe|main⚡ ⇒ 
+
+Ahora el error es mucho más sencillo:
+
+NameError: name 'Path' is not defined
+
+y ocurre aquí:
+
+parser.add_argument('--input', type=Path, default=Path('data/input'))
+¿Por qué pasa?
+
+Porque has quitado el import global:
+
+from pathlib import Path
+
+y lo has puesto dentro de main():
+
+def main():
+    from pathlib import Path
+
+Pero parse_args() se ejecuta antes y no conoce qué es Path.
+
+Las funciones en Python tienen su propio ámbito (scope). El Path importado dentro de main() solo existe dentro de main().
+
+Solución
+
+Vuelve a poner arriba del archivo:
+
+import argparse
+import json
+from pathlib import Path
+
+y elimina estos imports dentro de main():
+
+from pathlib import Path
+
+No necesitas ninguno dentro de la función.
+
+Además, veo otros dos errores lógicos
+1. Nombre del archivo
+
+Según el proyecto, el archivo se llama:
+
+function_definitions.json
+
+(no functions_definition.json).
+
+Comprueba el nombre exacto con:
+
+ls data/input
+2. Tu bucle no hace lo que crees
+
+Tienes:
+
+for el in data:
+    el.get('name', [])
+    function_list.append(el)
+
+Fíjate:
+
+el.get('name', [])
+
+obtiene el nombre... pero luego lo ignoras.
+
+Y haces:
+
+function_list.append(el)
+
+que añade el diccionario entero.
+
+Si quieres extraer solo nombres, mentalmente el algoritmo es:
+
+para cada función:
+    coger el campo "name"
+    añadirlo a la lista
+
+No hace falta que te dé el código exacto todavía; intenta corregirlo tú y piensa:
+
+¿Qué devuelve el.get("name")?
+¿Qué quieres guardar en function_list?
+¿El diccionario entero o solo el nombre?
+Limpieza recomendada
+
+Tu main() tiene bastante código repetido:
+
+print("---------------------------------------")
+...
+print("---------------------------------------")
+
+Para esta fase bastaría con:
+
+Input
+Output
+Current directory
+Exists
+
+y después llamar a:
+
+json_reader()
+Objetivo de la siguiente ejecución
+
+Deberías llegar a algo como:
+
+Input: data/input
+Output: data/output
+Current dir: /.../Call_Me_maybe
+Exists: True
+
+Functions found:
+- fn_add_numbers
+- fn_reverse_string
+- fn_factorial
+
+Cuando consigas eso, el siguiente paso será crear models.py con Pydantic y dejar de trabajar con diccionarios crudos. Ahí empieza la parte seria de la arquitectura.
+
+import argparse
+import json
+from pathlib import Path
+
+def parse_args() -> argparse.Namespace:
+    """Parsea los argumentos de línea de comandos."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', type=Path, default=Path('data/input'))
+    parser.add_argument('--output', type=Path, default=Path('data/output'))
+    return parser.parse_args()
+
+def json_reader() -> None:
+
+    with open('./data/functions_definition.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+        function_list = []
+        for el in data:
+            nombre = el.get('name', [])
+            function_list.append(nombre)
+        print(function_list)
+
+
+def main() -> None:
+    """Función principal, entrada al programa."""
+    args = parse_args()
+
+
+    print("Input:", args.input)
+    print("Output:", args.output)
+    print(type(args.input))
+
+    print("---------------------------------------")
+    print("cwd:", Path.cwd())
+    print("input:", args.input.resolve())
+    print("exists:", args.input.exists())
+    print("---------------------------------------")
+
+    from pathlib import Path
+
+    print("Current dir:", Path.cwd())
+    print("Input:", args.input.resolve())
+    print("Exists:", args.input.exists())
+    print("---------------------------------------")
+
+    json_reader()
+
+
+if __name__ == "__main__":
+    main() con esto :  Call_Me_maybe|main⚡ ⇒ make run
+uv run python3 -m src 
+Input: data/input
+Output: data/output
+<class 'pathlib.PosixPath'>
+---------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/usr/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/sgoinfre/students/vabad-ro/Call_Me_maybe/src/__main__.py", line 50, in <module>
+    main()
+  File "/sgoinfre/students/vabad-ro/Call_Me_maybe/src/__main__.py", line 34, in main
+    print("cwd:", Path.cwd())
+UnboundLocalError: local variable 'Path' referenced before assignment
+make: *** [Makefile:26: run] Error 1
+Call_Me_maybe|main⚡ ⇒ 
+
+Ya estás muy cerca. El error sigue siendo exactamente el mismo: todavía tienes este import dentro de main():
+
+from pathlib import Path
+
+Mira tu código:
+
+def main() -> None:
+    ...
+    print("cwd:", Path.cwd())   # ← usas Path aquí
+    ...
+
+    from pathlib import Path    # ← pero lo importas aquí
+
+Python interpreta:
+
+"Dentro de main(), Path es una variable local."
+
+Y como la usas antes del import, explota con:
+
+UnboundLocalError: local variable 'Path' referenced before assignment
+Solución
+
+Borra esta línea de dentro de main():
+
+from pathlib import Path
+
+Ya la tienes arriba:
+
+from pathlib import Path
+
+y eso es suficiente para todo el archivo.
+
+Además, veo otro posible error que aparecerá justo después:
+
+Tienes:
+
+with open('./data/functions_definition.json', 'r')
+
+pero según el PDF el archivo se llama:
+
+function_definitions.json
+
+(no functions_definition.json).
+
+Compruébalo con:
+
+ls data/input
+
+Probablemente verás algo como:
+
+function_definitions.json
+function_calling_tests.json
+
+Y entonces deberías leer desde:
+
+data/input/function_definitions.json
+
+no desde:
+
+./data/functions_definition.json
+
+Tu función json_reader() ahora sí está mucho mejor:
+
+for el in data:
+    nombre = el.get('name', [])
+    function_list.append(nombre)
+
+Eso ya hace lo que quieres:
+
+lista de diccionarios
+↓
+extraer campo "name"
+↓
+guardar nombres
+
+Pequeño detalle: el valor por defecto de get podría ser None o "" en vez de [], porque esperas una cadena, no una lista.
+
+Yo haría el siguiente paso después de que funcione:
+
+print("Functions:")
+for fn in function_list:
+    print("-", fn)
+
+Deberías obtener algo tipo:
+
+Functions:
+- fn_add_numbers
+- fn_reverse_string
+- fn_factorial
+
+Cuando eso funcione, el siguiente paso natural es hacer que json_reader() reciba una ruta:
+
+json_reader(args.input)
+
+y construya el path al archivo usando Path, en vez de tener la ruta hardcodeada. Eso te acercará a la arquitectura final del proyecto.
