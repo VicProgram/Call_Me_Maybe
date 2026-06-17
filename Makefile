@@ -87,7 +87,7 @@ fclean:
 		@echo "\nCleaning uv cache\n"
 		uv cache clear
 		@echo "\nCleaning vic_cache\n"
-		rm -rf vic_cache
+		rm -rf ./vic_cache
 
 re: clean all
 
