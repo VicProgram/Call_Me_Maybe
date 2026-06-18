@@ -1,57 +1,175 @@
+import json
 import numpy as np
+from enum import Enum
+from models import State
 from llm_sdk import Small_LLM_Model
 
+
+# =========================
+# MODELO
+# =========================
+
 my_model = Small_LLM_Model()
-prompt = ""
-
-prompt_encoded = my_model.encode(prompt)
-
-state = State.START
-
-generated = []
-
-ids = prompt_ids + generated
 
 
+ 
+
+# =========================
+# VOCABULARIO
+# =========================
+
+with open(my_model.get_path_to_vocabulary_json()) as f:
+    vocab = json.load(f)
+
+token_to_id = {}
+id_to_token = {}
+
+for token_id, token_text in vocab.items():
+
+    token_id = int(token_id)
+
+    token_to_id[token_text] = token_id
+    id_to_token[token_id] = token_text
 
 
-def getvalid_tokens(state: State):
+def token_of(text: str):
+
+    if text not in token_to_id:
+        raise ValueError(f"Token no encontrado: {text}")
+
+    return token_to_id[text]
+
+
+# function names(lo tengo en lista)
+
+
+
+def get_valid_tokens(state: State):
+
     if state == State.START:
-        return {token_of("{")}
-    
+
+        return {
+            token_of("{")
+        }
+
     elif state == State.FN_NAME_KEY:
-        return {token_of('"fn_name"')}
+
+        return {
+            token_of('"fn_name"')
+        }
 
     elif state == State.FN_NAME_VALUE:
-        return (token_of({list_functions.name}))
-    
+
+        valid = set()
+
+        for fn in FUNCTION_NAMES:
+
+            if fn in token_to_id:
+                valid.add(token_of(fn))
+
+        return valid
+
+    elif state == State.ARGS_KEY:
+
+        return {
+            token_of('"args"')
+        }
+
+    elif state == State.END:
+
+        return {
+            token_of("}")
+        }
+    return set()
 
 
-    elif state == State.
-    elif state == State.
-    elif state == State.
-    elif state == State.
-    elif state == State.
-    
 
+# =========================
+# GENERACIÓN
+# =========================
 
+def generate_token(input_ids, state):
 
+    logits = my_model.get_logits_from_input_ids(input_ids)
 
+    # por si devuelve [seq_len, vocab_size]
 
+    if len(logits.shape) == 2:
+        logits = logits[-1]
 
-
-def generate_token(prompt_ids, state):
-
-    logits = my_model.get_logits_from_input_ids(prompt_ids)
-
-    valid = get_valid_tokens()
+    valid_tokens = get_valid_tokens(state)
 
     for token_id in range(len(logits)):
-        if token_id not in valid:
+
+        if token_id not in valid_tokens:
             logits[token_id] = -np.inf
 
-    return int(np.argmax(logits))
+    next_token = int(np.argmax(logits))
+
+    return next_token
+
+# pasar de un estado al siguiente
+
+def update_state(state, token):
+
+    token_text = id_to_token[token]
+
+    if state == State.START:
+        return State.FN_NAME_KEY
+
+    elif state == State.FN_NAME_KEY:
+        return State.FN_NAME_VALUE
+
+    elif state == State.FN_NAME_VALUE:
+        return State.ARGS_KEY
+
+    elif state == State.ARGS_KEY:
+        return State.END
+
+    return State.END
 
 
-def valid_token(state) -> bool:
-    ...
+def generate_json(prompt):
+
+    prompt_ids = my_model.encode(prompt)
+
+    generated = []
+
+    state = State.START
+
+    while state != State.END:
+
+        current_ids = prompt_ids + generated
+
+        next_token = generate_token(
+            current_ids,
+            state
+        )
+
+        generated.append(next_token)
+
+        print(
+            my_model.decode([next_token]),
+            end=""
+        )
+
+        state = update_state(
+            state,
+            next_token
+        )
+
+    return my_model.decode(generated)
+
+
+# =========================
+# TEST
+# =========================
+
+prompt = """
+What is the sum of 2 and 3?
+"""
+
+result = generate_json(prompt)
+
+print("\n\nRESULTADO:")
+print(result)

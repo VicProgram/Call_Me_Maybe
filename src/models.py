@@ -1,6 +1,6 @@
 from typing import Any
 from pydantic import BaseModel, Field
-from enum import StrEnum, Enum
+from enum import Enum
 from typing import Dict
 
 
@@ -14,7 +14,7 @@ class State(Enum):
     END = 6
 
 
-class ParameterType(StrEnum):
+class ParameterType(Enum):
     NUMBER = "number"
     STRING = "string"
 

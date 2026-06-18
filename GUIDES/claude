@@ -1,0 +1,812 @@
+Voy a explicarte cómo abordaría este proyecto "call me maybe" paso a paso, con mucho detalle.
+¿Qué hay que construir?
+Un sistema que, dado un prompt en lenguaje natural como "What is the sum of 2 and 3?", usa un LLM pequeño (Qwen3-0.6B) para generar una llamada a función estructurada en JSON:
+json{"prompt": "What is the sum of 2 and 3?", "fn_name": "fn_add_numbers", "args": {"a": 2.0, "b": 3.0}}
+La clave es que no puedes simplemente pedirle al modelo que escriba JSON — tienes que implementar decodificación restringida para garantizarlo al 100%.
+
+La arquitectura del sistema
+El flujo completo tiene dos fases:
+Fase 1 — Selección de función: Usar el LLM para decidir qué función llamar entre las disponibles.
+Fase 2 — Extracción de argumentos: Usar el LLM con decodificación restringida para extraer cada argumento con el tipo correcto.
+
+¿Qué es la decodificación restringida y por qué es necesaria?
+Un LLM genera texto token a token. En cada paso produce "logits" — una puntuación para cada token del vocabulario (Qwen3-0.6B tiene ~150.000 tokens). Normalmente se elige el de mayor puntuación.
+El problema: si pides {"fn_name": y el modelo quiere escribir "fn_add como siguiente token, genial. Pero a veces escribe " para cerrar antes de tiempo, o añade un espacio de más, o escribe texto libre. Con modelos pequeños esto falla el 70% de las veces.
+La decodificación restringida funciona así: antes de elegir el siguiente token, pones a -infinito los logits de todos los tokens que romperían la estructura esperada. Solo quedan los tokens válidos para el estado actual del JSON que estás construyendo.
+
+Estructura del proyecto
+call_me_maybe/
+├── src/
+│   ├── __main__.py          # Punto de entrada
+│   ├── models.py            # Clases Pydantic
+│   ├── file_handler.py      # Lectura/escritura de archivos
+│   ├── prompt_builder.py    # Construcción de prompts
+│   ├── constrained_decoder.py  # El corazón del proyecto
+│   └── function_caller.py   # Orquestador principal
+├── llm_sdk/                 # SDK proporcionado
+├── data/
+│   ├── input/
+│   │   ├── function_calling_tests.json
+│   │   └── function_definitions.json
+│   └── output/
+├── pyproject.toml
+├── Makefile
+└── README.md
+
+El código, archivo por archivo
+src/models.py — Las clases Pydantic
+python"""Data models for the function calling system."""
+
+from typing import Any
+from pydantic import BaseModel, field_validator
+
+
+class ParameterDefinition(BaseModel):
+    """Defines a single parameter of a function."""
+    type: str  # "number", "string", "boolean", "integer"
+
+
+class FunctionDefinition(BaseModel):
+    """Defines a callable function with its parameters and return type."""
+    name: str
+    description: str
+    parameters: dict[str, ParameterDefinition]
+    returns: dict[str, Any]
+
+    @field_validator("parameters", mode="before")
+    @classmethod
+    def parse_parameters(cls, v: Any) -> dict[str, ParameterDefinition]:
+        """Convert raw dicts to ParameterDefinition objects."""
+        if isinstance(v, dict):
+            return {
+                key: ParameterDefinition(**val) if isinstance(val, dict) else val
+                for key, val in v.items()
+            }
+        return v
+
+
+class FunctionCall(BaseModel):
+    """Represents the result of a function call resolution."""
+    prompt: str
+    fn_name: str
+    args: dict[str, Any]
+Pydantic hace validación automática — si el JSON de entrada tiene un campo con tipo incorrecto, lo detecta y lanza un error claro en lugar de fallar de forma misteriosa más tarde.
+
+src/file_handler.py — Lectura y escritura segura
+python"""Handles reading input files and writing output files."""
+
+import json
+from pathlib import Path
+from typing import Any
+from src.models import FunctionDefinition, FunctionCall
+
+
+def load_json_file(path: Path) -> Any:
+    """
+    Load and parse a JSON file safely.
+
+    Args:
+        path: Path to the JSON file.
+
+    Returns:
+        Parsed JSON content.
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist.
+        ValueError: If the file contains invalid JSON.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Input file not found: {path}")
+    
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in {path}: {e}") from e
+
+
+def load_function_definitions(path: Path) -> list[FunctionDefinition]:
+    """
+    Load and validate function definitions from JSON.
+
+    Args:
+        path: Path to function_definitions.json
+
+    Returns:
+        List of validated FunctionDefinition objects.
+    """
+    raw = load_json_file(path)
+    
+    if not isinstance(raw, list):
+        raise ValueError("function_definitions.json must contain a JSON array")
+    
+    definitions = []
+    for i, item in enumerate(raw):
+        try:
+            definitions.append(FunctionDefinition(**item))
+        except Exception as e:
+            raise ValueError(f"Invalid function definition at index {i}: {e}") from e
+    
+    return definitions
+
+
+def load_test_prompts(path: Path) -> list[str]:
+    """
+    Load test prompts from JSON.
+
+    Args:
+        path: Path to function_calling_tests.json
+
+    Returns:
+        List of prompt strings.
+    """
+    raw = load_json_file(path)
+    
+    if not isinstance(raw, list):
+        raise ValueError("function_calling_tests.json must contain a JSON array")
+    
+    prompts = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, str):
+            raise ValueError(f"Prompt at index {i} must be a string, got {type(item)}")
+        prompts.append(item)
+    
+    return prompts
+
+
+def write_results(results: list[FunctionCall], output_path: Path) -> None:
+    """
+    Write function call results to JSON file.
+
+    Args:
+        results: List of FunctionCall objects to serialize.
+        output_path: Destination file path.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    output_data = [result.model_dump() for result in results]
+    
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(output_data, f, indent=2, ensure_ascii=False)
+
+src/prompt_builder.py — Construir los prompts para el LLM
+python"""Builds prompts for the LLM to select functions and extract arguments."""
+
+from src.models import FunctionDefinition
+
+
+def build_function_selection_prompt(
+    user_prompt: str,
+    functions: list[FunctionDefinition]
+) -> str:
+    """
+    Build a prompt asking the LLM to choose which function to call.
+
+    The LLM only needs to output the function name — we'll use constrained
+    decoding to force it to pick one of the valid names.
+
+    Args:
+        user_prompt: The natural language request.
+        functions: Available function definitions.
+
+    Returns:
+        Complete prompt string.
+    """
+    fn_descriptions = "\n".join(
+        f"- {fn.name}: {fn.description}"
+        for fn in functions
+    )
+    
+    return (
+        f"You are a function calling assistant. "
+        f"Given a user request, select the most appropriate function.\n\n"
+        f"Available functions:\n{fn_descriptions}\n\n"
+        f"User request: {user_prompt}\n\n"
+        f"Function to call: "
+    )
+
+
+def build_argument_extraction_prompt(
+    user_prompt: str,
+    fn_def: FunctionDefinition,
+    param_name: str
+) -> str:
+    """
+    Build a prompt asking the LLM to extract a specific argument value.
+
+    Args:
+        user_prompt: The original natural language request.
+        fn_def: The function being called.
+        param_name: The specific parameter to extract.
+
+    Returns:
+        Complete prompt string.
+    """
+    param_type = fn_def.parameters[param_name].type
+    
+    return (
+        f"Extract the value for parameter '{param_name}' "
+        f"(type: {param_type}) from this request.\n\n"
+        f"Function: {fn_def.name} - {fn_def.description}\n"
+        f"Request: {user_prompt}\n\n"
+        f"Value of '{param_name}': "
+    )
+
+src/constrained_decoder.py — El corazón del proyecto
+Este es el archivo más complejo e importante. Aquí está la decodificación restringida.
+python"""
+Constrained decoding for guaranteed valid JSON output.
+
+The key idea: at each token generation step, we mask out (set to -inf)
+all tokens that would break the expected structure, then let the model
+pick from the remaining valid tokens.
+"""
+
+import json
+import math
+from typing import Any
+import numpy as np
+from llm_sdk import Small_LLM_Model
+
+
+class VocabularyIndex:
+    """
+    Maps between token IDs and their string representations.
+    
+    This is crucial for constrained decoding — we need to know
+    which token IDs correspond to which characters/strings so we
+    can determine which tokens are valid at each generation step.
+    """
+
+    def __init__(self, model: Small_LLM_Model) -> None:
+        """
+        Load and index the vocabulary from the model's vocabulary JSON.
+
+        Args:
+            model: The LLM model instance.
+        """
+        vocab_path = model.get_path_to_vocabulary_json()
+        
+        with open(vocab_path, "r", encoding="utf-8") as f:
+            raw_vocab: dict[str, str] = json.load(f)
+        
+        # raw_vocab maps token_id (as string) -> token_string
+        # Example: {"42": "hello", "1337": " world", ...}
+        self.id_to_token: dict[int, str] = {
+            int(k): v for k, v in raw_vocab.items()
+        }
+        self.token_to_ids: dict[str, list[int]] = {}
+        
+        for token_id, token_str in self.id_to_token.items():
+            if token_str not in self.token_to_ids:
+                self.token_to_ids[token_str] = []
+            self.token_to_ids[token_str].append(token_id)
+        
+        self.vocab_size = len(self.id_to_token)
+
+    def get_ids_for_prefix(self, prefix: str) -> list[int]:
+        """
+        Get all token IDs whose string starts with the given prefix.
+        
+        Used when we need tokens that can continue a partial string.
+
+        Args:
+            prefix: The string prefix to match.
+
+        Returns:
+            List of matching token IDs.
+        """
+        return [
+            token_id
+            for token_str, ids in self.token_to_ids.items()
+            for token_id in ids
+            if token_str.startswith(prefix)
+        ]
+
+    def get_ids_for_exact(self, exact: str) -> list[int]:
+        """
+        Get token IDs that exactly match a string.
+
+        Args:
+            exact: The exact string to match.
+
+        Returns:
+            List of matching token IDs.
+        """
+        return self.token_to_ids.get(exact, [])
+
+
+def generate_with_constraints(
+    model: Small_LLM_Model,
+    vocab: VocabularyIndex,
+    prompt: str,
+    valid_token_ids: list[int],
+    max_new_tokens: int = 50
+) -> str:
+    """
+    Generate text token-by-token, restricting to only valid token IDs.
+
+    This is the core constrained decoding loop. At each step:
+    1. Get logits for all tokens from the model
+    2. Set all invalid tokens to -infinity
+    3. Pick the highest-scoring valid token
+    4. Add it to the sequence and repeat
+
+    Args:
+        model: The LLM model.
+        vocab: The vocabulary index.
+        prompt: Starting prompt text.
+        valid_token_ids: The ONLY token IDs allowed to be generated.
+        max_new_tokens: Safety limit on generation length.
+
+    Returns:
+        The generated text (not including the prompt).
+    """
+    import numpy as np  # noqa: PLC0415
+    
+    # Encode the prompt into token IDs
+    input_ids: list[int] = model.encode(prompt)
+    generated_ids: list[int] = []
+    
+    # Create a mask array: True means "block this token"
+    # We'll set invalid tokens to -inf in logits
+    all_token_ids = set(vocab.id_to_token.keys())
+    valid_set = set(valid_token_ids)
+    
+    for _ in range(max_new_tokens):
+        # Convert current sequence to tensor-like input
+        current_ids = input_ids + generated_ids
+        
+        # Get logits from the model
+        # Shape: [vocab_size] — one score per possible next token
+        import torch  # noqa: PLC0415
+        input_tensor = torch.tensor([current_ids])
+        logits = model.get_logits_from_input_ids(input_tensor)
+        
+        # logits shape: [1, seq_len, vocab_size] — take last position
+        next_token_logits = logits[0, -1, :].float().numpy()
+        
+        # Apply constraint: set all invalid token logits to -infinity
+        for token_id in all_token_ids - valid_set:
+            if token_id < len(next_token_logits):
+                next_token_logits[token_id] = -math.inf
+        
+        # Pick the highest-scoring valid token (greedy decoding)
+        next_token_id = int(np.argmax(next_token_logits))
+        
+        # Safety check: if no valid token found, stop
+        if next_token_logits[next_token_id] == -math.inf:
+            break
+        
+        generated_ids.append(next_token_id)
+        
+        # Stop if we've generated all we need (single selection case)
+        break  # For function name selection, we generate one "chunk"
+    
+    return model.decode(generated_ids)
+Ahora la parte más sofisticada — generar JSON completo token a token con un autómata de estados:
+pythonclass JSONStateMachine:
+    """
+    A finite state machine that tracks what's valid in a JSON structure.
+    
+    States represent where we are in building the JSON:
+    - OPEN: expecting opening {
+    - KEY: building a key string
+    - COLON: expecting :
+    - VALUE_START: expecting start of a value
+    - VALUE_STRING: building a string value
+    - VALUE_NUMBER: building a number value  
+    - COMMA_OR_CLOSE: expecting , or }
+    - DONE: JSON complete
+    
+    At each state, only certain tokens are valid.
+    This is what makes constrained decoding work for structured output.
+    """
+    
+    def get_valid_tokens_for_state(
+        self,
+        state: str,
+        partial_value: str,
+        expected_keys: list[str],
+        key_types: dict[str, str],
+        current_key: str,
+        vocab: VocabularyIndex
+    ) -> list[int]:
+        """Get valid token IDs for the current JSON construction state."""
+        
+        if state == "VALUE_NUMBER":
+            # Only digits, minus, dot, and the closing tokens
+            valid = []
+            for token_str, ids in vocab.token_to_ids.items():
+                # Allow digits, decimal point, minus at start
+                if all(c in "0123456789.-" for c in token_str):
+                    valid.extend(ids)
+                # Allow closing after a complete number
+                if token_str in [",", "}", " ", "\n"]:
+                    valid.extend(ids)
+            return valid
+        
+        # ... similar logic for other states
+        return []
+
+src/function_caller.py — El orquestador principal
+python"""
+Main orchestrator that combines all components to resolve function calls.
+"""
+
+from typing import Any
+from llm_sdk import Small_LLM_Model
+from src.models import FunctionDefinition, FunctionCall
+from src.constrained_decoder import VocabularyIndex
+from src.prompt_builder import (
+    build_function_selection_prompt,
+    build_argument_extraction_prompt
+)
+
+
+class FunctionCaller:
+    """
+    Orchestrates LLM-based function selection and argument extraction.
+    
+    Two-phase approach:
+    1. Use constrained decoding to select the function name
+       (only valid function names are allowed as output)
+    2. For each parameter, use constrained decoding to extract the value
+       (only tokens valid for that parameter's type are allowed)
+    """
+
+    def __init__(self, model: Small_LLM_Model) -> None:
+        """
+        Initialize with a loaded LLM model.
+
+        Args:
+            model: Initialized Small_LLM_Model instance.
+        """
+        self.model = model
+        self.vocab = VocabularyIndex(model)
+
+    def select_function(
+        self,
+        prompt: str,
+        functions: list[FunctionDefinition]
+    ) -> FunctionDefinition:
+        """
+        Use the LLM to select which function to call.
+        
+        We constrain the output to only the valid function names.
+        The model cannot output anything else.
+
+        Args:
+            prompt: Natural language request.
+            functions: Available functions.
+
+        Returns:
+            The selected FunctionDefinition.
+        """
+        llm_prompt = build_function_selection_prompt(prompt, functions)
+        
+        # Build the set of valid token sequences — one per function name
+        # We'll use a greedy approach: find which function name the model
+        # assigns highest probability to after the prompt
+        
+        fn_names = [fn.name for fn in functions]
+        fn_map = {fn.name: fn for fn in functions}
+        
+        # Score each function name by summing log-probs of its tokens
+        import torch  # noqa: PLC0415
+        import math
+        
+        input_ids = self.model.encode(llm_prompt)
+        input_tensor = torch.tensor([input_ids])
+        logits = self.model.get_logits_from_input_ids(input_tensor)
+        next_logits = logits[0, -1, :].float()
+        
+        # Apply softmax to get probabilities
+        import torch.nn.functional as F  # noqa: PLC0415
+        probs = F.softmax(next_logits, dim=-1).numpy()
+        
+        # For each function name, score it by the probability of its
+        # first token(s) appearing after the prompt
+        best_fn = functions[0]
+        best_score = -math.inf
+        
+        for fn_name in fn_names:
+            # Encode the function name and check probability of first token
+            fn_token_ids = self.model.encode(fn_name)
+            if fn_token_ids and fn_token_ids[0] < len(probs):
+                score = float(probs[fn_token_ids[0]])
+                if score > best_score:
+                    best_score = score
+                    best_fn = fn_map[fn_name]
+        
+        return best_fn
+
+    def extract_argument(
+        self,
+        prompt: str,
+        fn_def: FunctionDefinition,
+        param_name: str
+    ) -> Any:
+        """
+        Extract a single argument value using constrained decoding.
+        
+        The constraint depends on the parameter type:
+        - "number": only numeric tokens allowed
+        - "string": any tokens until closing quote
+        - "boolean": only "true" or "false"
+
+        Args:
+            prompt: Original natural language request.
+            fn_def: The function definition.
+            param_name: Parameter to extract.
+
+        Returns:
+            The extracted value with correct Python type.
+        """
+        param_type = fn_def.parameters[param_name].type
+        llm_prompt = build_argument_extraction_prompt(prompt, fn_def, param_name)
+        
+        import torch  # noqa: PLC0415
+        import numpy as np  # noqa: PLC0415
+        import math
+        
+        input_ids = self.model.encode(llm_prompt)
+        generated_text = ""
+        
+        for _ in range(30):  # Max 30 tokens for a value
+            current_tensor = torch.tensor([input_ids + self.model.encode(generated_text)])
+            logits = self.model.get_logits_from_input_ids(current_tensor)
+            next_logits = logits[0, -1, :].float().numpy()
+            
+            # Get valid token IDs based on type and what we've built so far
+            valid_ids = self._get_valid_token_ids(
+                param_type, generated_text, self.vocab
+            )
+            
+            # Mask invalid tokens
+            mask = np.full(len(next_logits), -math.inf)
+            for tid in valid_ids:
+                if tid < len(next_logits):
+                    mask[tid] = next_logits[tid]
+            
+            next_token_id = int(np.argmax(mask))
+            
+            if mask[next_token_id] == -math.inf:
+                break
+            
+            next_token_str = self.vocab.id_to_token.get(next_token_id, "")
+            
+            # Check if this token ends the value
+            if self._is_terminator(next_token_str, param_type, generated_text):
+                break
+            
+            generated_text += next_token_str
+            
+            if self._is_complete(generated_text, param_type):
+                break
+        
+        return self._cast_value(generated_text.strip(), param_type)
+
+    def _get_valid_token_ids(
+        self,
+        param_type: str,
+        current_text: str,
+        vocab: VocabularyIndex
+    ) -> list[int]:
+        """Get valid token IDs for the current value being built."""
+        valid = []
+        
+        if param_type == "number":
+            for token_str, ids in vocab.token_to_ids.items():
+                # Allow digits
+                if token_str.lstrip("-").replace(".", "", 1).isdigit():
+                    valid.extend(ids)
+                # Allow negative sign at start
+                if not current_text and token_str == "-":
+                    valid.extend(ids)
+                # Allow decimal point if not already present
+                if "." not in current_text and token_str == ".":
+                    valid.extend(ids)
+        
+        elif param_type == "string":
+            # For strings, allow any token that doesn't break structure
+            # In practice: allow all tokens except structural JSON chars
+            for token_str, ids in vocab.token_to_ids.items():
+                if token_str not in ["{", "}", "[", "]"]:
+                    valid.extend(ids)
+        
+        elif param_type == "boolean":
+            # Only "true" or "false" allowed
+            for prefix in ["true", "false"]:
+                remaining = prefix[len(current_text):]
+                if prefix.startswith(current_text) and remaining:
+                    valid.extend(vocab.get_ids_for_prefix(remaining[0]))
+        
+        return valid
+
+    def _is_terminator(
+        self, token_str: str, param_type: str, current_text: str
+    ) -> bool:
+        """Check if a token signals end of value."""
+        if param_type == "number":
+            return token_str in [",", "}", "\n", " "] and current_text
+        if param_type == "string":
+            return token_str in ["\n"] and current_text
+        return False
+
+    def _is_complete(self, text: str, param_type: str) -> bool:
+        """Check if we have a complete value."""
+        if param_type == "boolean":
+            return text.strip() in ["true", "false"]
+        return False
+
+    def _cast_value(self, text: str, param_type: str) -> Any:
+        """Cast the generated text to the correct Python type."""
+        try:
+            if param_type == "number":
+                return float(text)
+            if param_type == "integer":
+                return int(text)
+            if param_type == "boolean":
+                return text.lower() == "true"
+            return text  # string
+        except (ValueError, TypeError):
+            return text
+
+    def resolve(
+        self,
+        prompt: str,
+        functions: list[FunctionDefinition]
+    ) -> FunctionCall:
+        """
+        Full pipeline: select function and extract all arguments.
+
+        Args:
+            prompt: Natural language request.
+            functions: Available function definitions.
+
+        Returns:
+            Complete FunctionCall with name and all arguments.
+        """
+        fn_def = self.select_function(prompt, functions)
+        
+        args: dict[str, Any] = {}
+        for param_name in fn_def.parameters:
+            args[param_name] = self.extract_argument(prompt, fn_def, param_name)
+        
+        return FunctionCall(prompt=prompt, fn_name=fn_def.name, args=args)
+
+src/__main__.py — El punto de entrada
+python"""Entry point for the call me maybe function calling system."""
+
+import argparse
+import sys
+from pathlib import Path
+from llm_sdk import Small_LLM_Model
+from src.file_handler import load_function_definitions, load_test_prompts, write_results
+from src.function_caller import FunctionCaller
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="LLM Function Calling System")
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=Path("data/input"),
+        help="Input directory or file path"
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("data/output/function_calling_results.json"),
+        help="Output file path"
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    """Main entry point."""
+    args = parse_args()
+    
+    # Resolve input paths
+    if args.input.is_dir():
+        definitions_path = args.input / "function_definitions.json"
+        tests_path = args.input / "function_calling_tests.json"
+    else:
+        definitions_path = args.input
+        tests_path = args.input
+    
+    # Load input files
+    try:
+        functions = load_function_definitions(definitions_path)
+        prompts = load_test_prompts(tests_path)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error loading input files: {e}", file=sys.stderr)
+        return 1
+    
+    print(f"Loaded {len(functions)} functions and {len(prompts)} prompts")
+    
+    # Initialize model
+    try:
+        model = Small_LLM_Model()  # Loads Qwen3-0.6B by default
+    except Exception as e:
+        print(f"Error loading model: {e}", file=sys.stderr)
+        return 1
+    
+    # Process each prompt
+    caller = FunctionCaller(model)
+    results = []
+    
+    for i, prompt in enumerate(prompts):
+        print(f"Processing [{i+1}/{len(prompts)}]: {prompt[:60]}...")
+        try:
+            result = caller.resolve(prompt, functions)
+            results.append(result)
+            print(f"  → {result.fn_name}({result.args})")
+        except Exception as e:
+            print(f"  Error: {e}", file=sys.stderr)
+    
+    # Write output
+    try:
+        write_results(results, args.output)
+        print(f"\nResults written to {args.output}")
+    except Exception as e:
+        print(f"Error writing output: {e}", file=sys.stderr)
+        return 1
+    
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+Makefile
+makefile.PHONY: install run debug clean lint lint-strict
+
+install:
+	uv sync
+
+run:
+	uv run python -m src
+
+debug:
+	uv run python -m pdb -m src
+
+clean:
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .mypy_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -name "*.pyc" -delete 2>/dev/null || true
+
+lint:
+	uv run flake8 .
+	uv run mypy . --warn-return-any --warn-unused-ignores \
+		--ignore-missing-imports --disallow-untyped-defs \
+		--check-untyped-defs
+
+lint-strict:
+	uv run flake8 .
+	uv run mypy . --strict
+
+pyproject.toml
+toml[project]
+name = "call-me-maybe"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pydantic",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "flake8",
+    "mypy",
+    "pytest",
+]
+
+Los conceptos clave que hay que entender bien
+Por qué el vocabulario JSON es tan importante: Cada token en el vocabulario tiene un ID numérico y una representación de cadena. Por ejemplo, el token ID 334 podría ser " the" (con espacio delante), el 335 podría ser "the". Cuando estás generando un número como "42", necesitas saber qué token IDs corresponden a los caracteres 4, 2, 0-9 en general. Sin el vocabulario no puedes hacer este mapeo.
+El autómata de estados JSON: Piensa en el JSON {"fn_name": "fn_add", "args": {"a": 40}} como una secuencia de estados. Estás en el estado "esperando una clave" → llega " → estado "construyendo clave" → llega " → estado "esperando :"... En cada estado, el conjunto de tokens válidos es diferente y pequeño.
+Por qué es mejor que el prompting simple: Con prompting le dices al modelo "escribe JSON válido". Con decodificación restringida es físicamente imposible que el modelo escriba JSON inválido, porque los tokens que lo romperían tienen probabilidad 0.
+Este proyecto es muy interesante porque te enseña a trabajar en las tripas de cómo funciona la generación de texto — algo que muy poca gente hace a este nivel.

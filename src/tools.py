@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
-import sys
+from typing import Any
 
-def json_reader(path: Path) -> str:
+def json_reader(path: Path) -> Any:
 
     if not path.exists():
         print(f"Error: El archivo no existe en la ruta {path.resolve()}")
@@ -10,23 +10,19 @@ def json_reader(path: Path) -> str:
 
     try:
         with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            function_list = []
+            return json.load(f)
 
             # PRINT FUNCTION LIST NOT NECESSARY
 
-            for element in data:
-                name = element.get('name', "")
-                function_list.append(name)
+            # for element in data:
+            #     name = element.get('name', "")
+            #     function_list.append(name)
 
-            print("Functions:")
-            for fn in function_list:
-                print("-", fn)
+            # print("Functions:")
+            # for fn in function_list:
+            #     print("-", fn)
 
             # PRINT FUNCTION LIST NOT NECESSARY
-
-        return function_list
-
     except json.JSONDecodeError as e:
         print(f"Ocurrió un error al leer el JSON: {e}")
         return None
