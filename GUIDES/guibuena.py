@@ -1,0 +1,1047 @@
+
+Voy a explicarte todo desde cero, como si nunca hubieras visto esto antes.
+
+¿Qué problema resuelve este proyecto?
+Imagina que tienes una calculadora con botones. Si quieres sumar 40 y 2, pulsas el botón "suma", metes los números, y listo.
+Ahora imagina que tienes un amigo que habla solo en español natural. Le dices "oye, ¿cuánto es 40 más 2?" y él te entiende. Pero la calculadora no entiende español — necesita que alguien le pulse los botones correctos.
+Este proyecto construye ese "traductor": toma la frase en español/inglés y la convierte en la llamada correcta a la función con los argumentos correctos.
+"What is the sum of 40 and 2?"
+            ↓
+{ "fn_name": "fn_add_numbers", "args": {"a": 40, "b": 2} }
+
+¿Por qué es difícil? El problema del modelo pequeño
+Los LLMs (modelos de lenguaje) son básicamente máquinas de predecir el siguiente token (trozo de texto). Tú les das texto, ellos predicen qué viene después, letra a letra / palabra a palabra.
+El problema es que el modelo que usas aquí (Qwen3-0.6B) es muy pequeño — solo 600 millones de parámetros. Si le dices "escribe JSON", lo intenta, pero falla el 70% de las veces. Escribe cosas como:
+{ "function": "add"   ← se olvidó de cerrar las llaves
+{ fn_name: add_num }  ← sin comillas, JSON inválido
+La solución del proyecto es la decodificación restringida: en lugar de dejar al modelo escribir lo que quiera, tú controlas cada token que puede generar.
+
+¿Qué es un token? ¿Qué son los logits?
+Antes de entrar en código, necesitas entender esto bien porque es la base de todo.
+Token: Un trozo de texto. No es exactamente una letra ni exactamente una palabra. El modelo divide el texto en trozos. Por ejemplo:
+"hello world" → ["hello", " world"]
+"function_name" → ["function", "_", "name"]
+"42" → ["42"]   o quizás   ["4", "2"]  dependiendo del modelo
+Cada token tiene un número (ID). El vocabulario del modelo es la lista de todos los tokens posibles con sus IDs. Qwen3-0.6B tiene ~150.000 tokens posibles.
+Logits: Cuando el modelo recibe una secuencia de tokens y predice el siguiente, no te da directamente "el siguiente token es X". Te da una puntuación para cada uno de los 150.000 tokens posibles. Estas puntuaciones se llaman logits.
+Token 0 ("the"):     logit = 2.3
+Token 1 ("a"):       logit = 1.1
+Token 42 ("{"):      logit = 8.7   ← puntuación más alta
+Token 334 ("hello"): logit = 0.2
+... (150.000 puntuaciones en total)
+Normalmente se elige el token con la puntuación más alta. Pero nosotros vamos a modificar esas puntuaciones antes de elegir, poniendo -infinito en los tokens que no queremos. Si un token tiene -infinito, nunca puede ser elegido.
+
+La idea central: el autómata de estados
+Para generar JSON válido, usamos un autómata de estados. Es una máquina que siempre sabe "en qué punto del JSON estamos ahora", y según eso, sabe qué tokens son válidos.
+Imagina que estás construyendo esto:
+json{"fn_name": "fn_add_numbers", "args": {"a": 40.0, "b": 2.0}}
+En cada momento estás en un "estado":
+Estado INICIO       → solo puede venir "{"
+Estado DENTRO       → puede venir una clave (texto entre comillas) o "}"
+Estado EN_CLAVE     → puede venir cualquier letra (construyendo el nombre)
+Estado TRAS_CLAVE   → solo puede venir ":"
+Estado EN_VALOR_STR → puede venir cualquier letra o la comilla de cierre
+Estado EN_VALOR_NUM → puede venir dígitos, punto decimal, o terminador
+Estado TRAS_VALOR   → puede venir "," (más campos) o "}" (cierre)
+Estado FIN          → hemos terminado
+En cada estado, bloqueamos todos los tokens que no corresponden. El modelo solo puede elegir entre los válidos.
+
+La estructura del proyecto paso a paso
+Vamos a construir el proyecto archivo por archivo. Te explico cada uno con mucho detalle.
+
+PASO 1: src/models.py — Definir las estructuras de datos
+Lo primero es definir con Pydantic cómo son los datos que manejamos. Pydantic es una librería que valida datos automáticamente — si algo no tiene el formato correcto, lanza un error claro.
+pythonfrom typing import Any
+from pydantic import BaseModel, field_validator
+
+
+class ParameterDefinition(BaseModel):
+    """
+    Representa un parámetro de una función.
+    Por ejemplo: {"type": "number"}
+    """
+    type: str  # Puede ser "number", "string", "boolean", "integer"
+
+
+class FunctionDefinition(BaseModel):
+    """
+    Representa una función completa del archivo function_definitions.json
+    
+    Ejemplo de lo que parsea:
+    {
+        "name": "fn_add_numbers",
+        "description": "Add two numbers",
+        "parameters": {
+            "a": {"type": "number"},
+            "b": {"type": "number"}
+        },
+        "returns": {"type": "number"}
+    }
+    """
+    name: str
+    description: str
+    parameters: dict[str, ParameterDefinition]
+    returns: dict[str, Any]
+
+    @field_validator("parameters", mode="before")
+    @classmethod
+    def parse_parameters(cls, v: Any) -> dict[str, ParameterDefinition]:
+        """
+        Pydantic llama a esto automáticamente antes de validar 'parameters'.
+        
+        Convierte los diccionarios crudos en objetos ParameterDefinition.
+        Sin esto, Pydantic no sabría cómo transformar {"a": {"type": "number"}}
+        en {"a": ParameterDefinition(type="number")}
+        """
+        if isinstance(v, dict):
+            return {
+                key: ParameterDefinition(**val) if isinstance(val, dict) else val
+                for key, val in v.items()
+            }
+        return v
+
+
+class FunctionCall(BaseModel):
+    """
+    El resultado final que escribimos en el JSON de salida.
+    
+    Ejemplo:
+    {
+        "prompt": "What is the sum of 2 and 3?",
+        "fn_name": "fn_add_numbers",
+        "args": {"a": 2.0, "b": 3.0}
+    }
+    """
+    prompt: str
+    fn_name: str
+    args: dict[str, Any]
+¿Por qué Pydantic? El proyecto lo exige. Pero también tiene sentido: si el JSON de entrada tiene "type": 42 en lugar de "type": "number", Pydantic lanza un error inmediatamente con un mensaje claro, en lugar de fallar misteriosamente más tarde en el código.
+
+PASO 2: src/file_handler.py — Leer y escribir archivos
+pythonimport json
+from pathlib import Path
+from typing import Any
+from src.models import FunctionDefinition, FunctionCall
+
+
+def load_json_file(path: Path) -> Any:
+    """
+    Lee un archivo JSON de forma segura.
+    
+    Dos cosas pueden salir mal:
+    1. El archivo no existe → FileNotFoundError
+    2. El contenido no es JSON válido → ValueError
+    
+    Ambas las capturamos y lanzamos errores con mensajes claros.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Archivo no encontrado: {path}")
+    
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"JSON inválido en {path}: {e}") from e
+
+
+def load_function_definitions(path: Path) -> list[FunctionDefinition]:
+    """
+    Carga las definiciones de funciones y las valida con Pydantic.
+    
+    El archivo tiene que ser una lista JSON. Iteramos sobre cada elemento
+    y creamos un FunctionDefinition. Si alguno falla, decimos cuál es
+    (índice i) para que sea fácil de encontrar.
+    """
+    raw = load_json_file(path)
+    
+    if not isinstance(raw, list):
+        raise ValueError("function_definitions.json debe contener un array JSON")
+    
+    definitions = []
+    for i, item in enumerate(raw):
+        try:
+            definitions.append(FunctionDefinition(**item))
+        except Exception as e:
+            raise ValueError(f"Definición inválida en índice {i}: {e}") from e
+    
+    return definitions
+
+
+def load_test_prompts(path: Path) -> list[str]:
+    """
+    Carga los prompts de prueba.
+    
+    Simplemente una lista de strings. Verificamos que cada elemento
+    sea realmente un string y no un número o un objeto.
+    """
+    raw = load_json_file(path)
+    
+    if not isinstance(raw, list):
+        raise ValueError("function_calling_tests.json debe contener un array JSON")
+    
+    prompts = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, str):
+            raise ValueError(
+                f"El prompt en índice {i} debe ser string, "
+                f"pero es {type(item).__name__}"
+            )
+        prompts.append(item)
+    
+    return prompts
+
+
+def write_results(results: list[FunctionCall], output_path: Path) -> None:
+    """
+    Escribe los resultados en el archivo de salida.
+    
+    model_dump() convierte el objeto Pydantic a diccionario Python.
+    json.dump() convierte el diccionario a texto JSON.
+    
+    mkdir(parents=True, exist_ok=True) crea el directorio si no existe,
+    sin quejarse si ya existe.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Convertir objetos Pydantic a diccionarios
+    output_data = [result.model_dump() for result in results]
+    
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(output_data, f, indent=2, ensure_ascii=False)
+
+PASO 3: src/vocabulary.py — El índice del vocabulario
+Este es uno de los archivos más importantes. El vocabulario es el "diccionario" que mapea ID numérico ↔ texto del token.
+pythonimport json
+from llm_sdk import Small_LLM_Model
+
+
+class VocabularyIndex:
+    """
+    Carga el vocabulario del modelo y permite búsquedas eficientes.
+    
+    El archivo vocabulary.json del modelo se ve algo así:
+    {
+        "0": "<pad>",
+        "1": "<eos>",
+        "334": "hello",
+        "335": " hello",   ← mismo texto pero con espacio delante
+        "42": "{",
+        "43": "}",
+        "100": "0",
+        "101": "1",
+        ...
+    }
+    
+    Necesitamos dos direcciones de búsqueda:
+    - ID → texto (para saber qué dijo el modelo)
+    - texto → IDs (para saber qué IDs bloquear/permitir)
+    
+    Nota: un mismo texto puede tener VARIOS IDs. Por ejemplo
+    " the" (con espacio) y "the" (sin espacio) son tokens distintos,
+    pero también puede haber variantes de capitalización, etc.
+    """
+
+    def __init__(self, model: Small_LLM_Model) -> None:
+        vocab_path = model.get_path_to_vocabulary_json()
+        
+        with open(vocab_path, "r", encoding="utf-8") as f:
+            raw: dict[str, str] = json.load(f)
+        
+        # Dirección 1: ID (entero) → texto del token
+        self.id_to_token: dict[int, str] = {
+            int(k): v for k, v in raw.items()
+        }
+        
+        # Dirección 2: texto → lista de IDs
+        # (lista porque puede haber varios IDs para el mismo texto)
+        self.token_to_ids: dict[str, list[int]] = {}
+        for token_id, token_str in self.id_to_token.items():
+            if token_str not in self.token_to_ids:
+                self.token_to_ids[token_str] = []
+            self.token_to_ids[token_str].append(token_id)
+        
+        self.vocab_size = len(self.id_to_token)
+        self.all_ids = set(self.id_to_token.keys())
+
+    def get_ids_starting_with(self, prefix: str) -> list[int]:
+        """
+        Devuelve todos los IDs de tokens cuyo texto EMPIEZA con 'prefix'.
+        
+        Útil cuando estás construyendo una cadena parcialmente.
+        Por ejemplo, si ya has generado "fn_add" y quieres saber
+        qué tokens pueden continuar esa cadena (como "_numbers"),
+        buscas los tokens que empiezan con "_".
+        
+        Ejemplo:
+        prefix = "fn"
+        Devuelve IDs de: "fn", "fn_add", "fn_reverse", "fn_"...
+        """
+        result = []
+        for token_str, ids in self.token_to_ids.items():
+            if token_str.startswith(prefix):
+                result.extend(ids)
+        return result
+
+    def get_ids_exact(self, text: str) -> list[int]:
+        """
+        Devuelve IDs de tokens que son EXACTAMENTE 'text'.
+        """
+        return self.token_to_ids.get(text, [])
+
+    def get_ids_for_charset(self, chars: str) -> list[int]:
+        """
+        Devuelve IDs de tokens compuestos SOLO por caracteres en 'chars'.
+        
+        Útil para números: si chars = "0123456789.-"
+        devuelve todos los tokens que son puramente numéricos.
+        
+        Ejemplo con chars = "0123456789":
+        Devuelve IDs de: "0", "1", "42", "100", "3.14"... NO de "abc"
+        """
+        result = []
+        for token_str, ids in self.token_to_ids.items():
+            if token_str and all(c in chars for c in token_str):
+                result.extend(ids)
+        return result
+
+PASO 4: src/constrained_decoder.py — La decodificación restringida
+Este es el corazón del proyecto. Vamos a verlo en partes.
+pythonimport math
+from typing import Any
+import numpy as np
+import torch
+from llm_sdk import Small_LLM_Model
+from src.vocabulary import VocabularyIndex
+
+
+def get_next_token_logits(
+    model: Small_LLM_Model,
+    input_ids: list[int]
+) -> np.ndarray:
+    """
+    Pide al modelo las puntuaciones (logits) para el siguiente token.
+    
+    El modelo recibe la secuencia actual de IDs y devuelve un tensor
+    de forma [1, longitud_secuencia, tamaño_vocabulario].
+    
+    Nosotros solo queremos la última posición (el siguiente token),
+    así que cogemos [0, -1, :] → array de tamaño vocabulario.
+    
+    Ejemplo:
+    input_ids = [892, 318, 262]   ← "What is the"
+    logits devueltos:
+        token_0: 0.1
+        token_1: 0.3
+        token_42: 8.7   ← el modelo cree que "{" viene aquí
+        token_100: 2.1
+        ... (150.000 valores)
+    """
+    tensor = torch.tensor([input_ids])
+    logits = model.get_logits_from_input_ids(tensor)
+    # Cogemos la última posición y convertimos a numpy para operar
+    return logits[0, -1, :].float().numpy()
+
+
+def apply_mask(
+    logits: np.ndarray,
+    valid_ids: list[int]
+) -> np.ndarray:
+    """
+    Aplica la restricción: todos los tokens NO válidos → -infinito.
+    
+    Esto es literalmente toda la magia de la decodificación restringida.
+    
+    Antes del mask:
+        token_0: 0.1     (token inválido)
+        token_42: 8.7    (token válido, ej: "{")
+        token_100: 2.1   (token inválido)
+    
+    Después del mask:
+        token_0: -inf    ← bloqueado, nunca se elegirá
+        token_42: 8.7    ← sigue igual, puede elegirse
+        token_100: -inf  ← bloqueado
+    
+    Resultado: argmax devuelve 42, siempre.
+    """
+    masked = np.full(len(logits), -math.inf)
+    for tid in valid_ids:
+        if 0 <= tid < len(logits):
+            masked[tid] = logits[tid]
+    return masked
+
+
+def select_best_token(masked_logits: np.ndarray) -> int | None:
+    """
+    Elige el token con mayor puntuación.
+    
+    Devuelve None si todos los tokens válidos tienen -inf
+    (situación de error: ningún token válido disponible).
+    """
+    best = int(np.argmax(masked_logits))
+    if masked_logits[best] == -math.inf:
+        return None
+    return best
+Ahora el autómata de estados para generar el JSON completo:
+pythonclass JSONGenerator:
+    """
+    Genera un JSON con forma específica usando decodificación restringida.
+    
+    El JSON que queremos generar siempre tiene esta estructura:
+    {
+        "fn_name": "<nombre_funcion>",
+        "args": {
+            "<param1>": <valor1>,
+            "<param2>": <valor2>
+        }
+    }
+    
+    Sabemos EXACTAMENTE qué debe ir en cada posición, así que podemos
+    ir campo por campo y restringir los tokens apropiadamente.
+    
+    En lugar de generar el JSON entero de una vez (que es lo que fallaría
+    con un modelo pequeño), lo construimos pieza a pieza:
+    
+    1. Generamos literalmente '{"fn_name": "' (texto fijo, sin modelo)
+    2. Usamos el modelo para elegir el nombre de función
+       (solo entre los nombres válidos)
+    3. Generamos '", "args": {' (texto fijo)
+    4. Para cada parámetro, usamos el modelo para extraer el valor
+       (restringido al tipo correcto)
+    5. Ensamblamos todo
+    """
+
+    def __init__(
+        self,
+        model: Small_LLM_Model,
+        vocab: VocabularyIndex
+    ) -> None:
+        self.model = model
+        self.vocab = vocab
+
+    def select_function_name(
+        self,
+        prompt_ids: list[int],
+        candidate_names: list[str]
+    ) -> str:
+        """
+        Elige el nombre de función más probable entre los candidatos.
+        
+        Estrategia: para cada nombre candidato, miramos la probabilidad
+        que el modelo asigna a los tokens de ese nombre dados los
+        tokens del prompt.
+        
+        Ejemplo:
+        candidatos = ["fn_add_numbers", "fn_reverse_string", "fn_factorial"]
+        prompt = "What is the sum of 40 and 2?"
+        
+        El modelo asigna:
+        - P("fn_add_numbers"  | prompt) = 0.82  ← más alto
+        - P("fn_reverse_str"  | prompt) = 0.03
+        - P("fn_factorial"    | prompt) = 0.05
+        
+        Elegimos "fn_add_numbers".
+        
+        Técnicamente: sumamos log-probabilidades de los tokens de cada
+        nombre para evitar que nombres largos salgan siempre perdiendo.
+        """
+        logits = get_next_token_logits(self.model, prompt_ids)
+        
+        # Convertir logits a log-probabilidades
+        # softmax: convierte puntuaciones brutas en probabilidades (suman 1)
+        # log: tomamos el logaritmo para poder sumar en lugar de multiplicar
+        log_probs = self._log_softmax(logits)
+        
+        best_name = candidate_names[0]
+        best_score = -math.inf
+        
+        for name in candidate_names:
+            # Encodificar el nombre en tokens
+            name_token_ids = self.model.encode(name)
+            
+            # Calcular log-prob total del nombre
+            # (suma de log-probs de cada token del nombre)
+            score = self._score_sequence(
+                prompt_ids, name_token_ids, log_probs
+            )
+            
+            if score > best_score:
+                best_score = score
+                best_name = name
+        
+        return best_name
+
+    def _log_softmax(self, logits: np.ndarray) -> np.ndarray:
+        """
+        Convierte logits a log-probabilidades de forma numéricamente estable.
+        
+        softmax(x_i) = exp(x_i) / sum(exp(x_j))
+        
+        El problema: exp(8.7) es un número muy grande.
+        La solución estable: restar el máximo primero.
+        
+        log_softmax(x_i) = x_i - max(x) - log(sum(exp(x_j - max(x))))
+        """
+        max_logit = np.max(logits)
+        shifted = logits - max_logit
+        log_sum_exp = np.log(np.sum(np.exp(shifted)))
+        return shifted - log_sum_exp
+
+    def _score_sequence(
+        self,
+        context_ids: list[int],
+        target_ids: list[int],
+        first_logprobs: np.ndarray
+    ) -> float:
+        """
+        Puntúa una secuencia de tokens dado un contexto.
+        
+        Para el primer token usamos los log_probs ya calculados.
+        Para tokens posteriores haría falta un forward pass adicional
+        (simplificado aquí para claridad).
+        """
+        if not target_ids:
+            return -math.inf
+        
+        # Puntuación del primer token
+        first_id = target_ids[0]
+        if first_id >= len(first_logprobs):
+            return -math.inf
+        
+        score = float(first_logprobs[first_id])
+        
+        # Para nombres con múltiples tokens, hacemos forward passes extra
+        current_ids = context_ids + [first_id]
+        for next_target_id in target_ids[1:]:
+            logits = get_next_token_logits(self.model, current_ids)
+            log_probs = self._log_softmax(logits)
+            if next_target_id < len(log_probs):
+                score += float(log_probs[next_target_id])
+            current_ids = current_ids + [next_target_id]
+        
+        return score
+
+    def extract_number(
+        self,
+        prompt_ids: list[int],
+        param_name: str
+    ) -> float:
+        """
+        Extrae un valor numérico usando decodificación restringida.
+        
+        Solo permitimos tokens que sean dígitos, punto decimal o signo negativo.
+        Paramos cuando encontramos un token que no puede ser parte de un número.
+        
+        Ejemplo de generación token a token:
+        
+        Turno 1:
+          contexto: "...sum of 40 and 2? Value of 'a':"
+          tokens válidos: ["-", "0", "1", ..., "9", "40", "42", ...]
+          modelo elige: "4"   (o directamente "40")
+          texto acumulado: "4"
+        
+        Turno 2:
+          contexto: "...Value of 'a': 4"
+          tokens válidos: ["0", ".", ",", "}", ...]
+          modelo elige: "0"
+          texto acumulado: "40"
+        
+        Turno 3:
+          contexto: "...Value of 'a': 40"
+          tokens válidos: [".", ",", "}", ...]
+          el modelo elige "." o directamente un terminador
+          Si elige ".", continuamos. Si elige "," o "}", paramos.
+        
+        Resultado: "40" → float("40") = 40.0
+        """
+        # Tokens válidos para números:
+        # - dígitos puros: "0", "1", ..., "9", "10", "42", etc.
+        # - punto decimal: "."
+        # - signo negativo: "-" (solo al inicio)
+        # - terminadores que NO se añaden al número: ",", "}", "\n", " "
+        
+        digit_ids = self.vocab.get_ids_for_charset("0123456789")
+        dot_ids = self.vocab.get_ids_exact(".")
+        minus_ids = self.vocab.get_ids_exact("-")
+        
+        accumulated = ""
+        current_ids = list(prompt_ids)
+        
+        for step in range(20):  # máximo 20 tokens para un número
+            logits = get_next_token_logits(self.model, current_ids)
+            
+            # Determinar tokens válidos según lo que llevamos acumulado
+            valid_ids: list[int] = []
+            
+            if not accumulated:
+                # Al inicio: dígitos o signo negativo
+                valid_ids = digit_ids + minus_ids
+            elif accumulated == "-":
+                # Después del signo: solo dígitos
+                valid_ids = digit_ids
+            elif "." in accumulated:
+                # Ya hay punto decimal: solo dígitos (parte decimal)
+                valid_ids = digit_ids
+            else:
+                # En medio de la parte entera: dígitos o punto decimal
+                valid_ids = digit_ids + dot_ids
+            
+            # También permitimos terminadores (para detectar el fin)
+            terminator_ids = (
+                self.vocab.get_ids_exact(",")
+                + self.vocab.get_ids_exact("}")
+                + self.vocab.get_ids_exact("\n")
+                + self.vocab.get_ids_exact(" ")
+            )
+            
+            all_valid = valid_ids + terminator_ids
+            masked = apply_mask(logits, all_valid)
+            chosen_id = select_best_token(masked)
+            
+            if chosen_id is None:
+                break
+            
+            token_str = self.vocab.id_to_token.get(chosen_id, "")
+            
+            # Si es terminador, paramos (no lo añadimos al número)
+            if token_str in [",", "}", "\n", " "] and accumulated:
+                break
+            
+            accumulated += token_str
+            current_ids = current_ids + [chosen_id]
+        
+        try:
+            return float(accumulated) if accumulated else 0.0
+        except ValueError:
+            return 0.0
+
+    def extract_string(
+        self,
+        prompt_ids: list[int],
+        param_name: str
+    ) -> str:
+        """
+        Extrae un valor string usando decodificación restringida.
+        
+        Para strings es más complejo porque casi cualquier carácter es válido.
+        La restricción principal es: paramos cuando encontramos una comilla
+        de cierre o un salto de línea.
+        
+        Truco: permitimos casi todos los tokens, pero buscamos activamente
+        cuándo el modelo quiere terminar la cadena.
+        """
+        # Para strings: bloqueamos solo tokens claramente estructurales
+        # que no deberían aparecer dentro de un valor de cadena
+        blocked_tokens = {"{", "}", "[", "]"}
+        
+        valid_ids = [
+            tid for tid, tstr in self.vocab.id_to_token.items()
+            if tstr not in blocked_tokens
+        ]
+        
+        # Tokens que indican fin de string
+        end_tokens = {"\n", '",', '"}'}
+        
+        accumulated = ""
+        current_ids = list(prompt_ids)
+        
+        for step in range(50):  # strings pueden ser más largos
+            logits = get_next_token_logits(self.model, current_ids)
+            masked = apply_mask(logits, valid_ids)
+            chosen_id = select_best_token(masked)
+            
+            if chosen_id is None:
+                break
+            
+            token_str = self.vocab.id_to_token.get(chosen_id, "")
+            
+            if any(token_str.endswith(end) for end in end_tokens):
+                # Añadimos solo la parte antes del terminador
+                break
+            
+            accumulated += token_str
+            current_ids = current_ids + [chosen_id]
+        
+        return accumulated.strip()
+
+    def extract_boolean(
+        self,
+        prompt_ids: list[int]
+    ) -> bool:
+        """
+        Extrae un booleano: solo puede ser 'true' o 'false'.
+        
+        Esta es la restricción más fuerte posible: de 150.000 tokens
+        posibles, solo permitimos exactamente los que forman "true" o "false".
+        
+        En el primer paso, solo permitimos tokens que empiezan por 't' o 'f'.
+        En el segundo paso, solo los que continúan la palabra elegida.
+        Etc.
+        """
+        logits = get_next_token_logits(self.model, prompt_ids)
+        
+        # ¿Qué es más probable: "true" o "false"?
+        true_ids = self.model.encode("true")
+        false_ids = self.model.encode("false")
+        
+        log_probs = self._log_softmax(logits)
+        
+        true_score = (
+            float(log_probs[true_ids[0]])
+            if true_ids and true_ids[0] < len(log_probs)
+            else -math.inf
+        )
+        false_score = (
+            float(log_probs[false_ids[0]])
+            if false_ids and false_ids[0] < len(log_probs)
+            else -math.inf
+        )
+        
+        return true_score > false_score
+
+PASO 5: src/prompt_builder.py — Construir los prompts
+pythonfrom src.models import FunctionDefinition
+
+
+def build_function_selection_prompt(
+    user_prompt: str,
+    functions: list[FunctionDefinition]
+) -> str:
+    """
+    Construye el prompt para que el modelo elija qué función llamar.
+    
+    Le damos al modelo:
+    1. Contexto de qué hace cada función
+    2. El request del usuario
+    3. Un inicio de respuesta "Function to call: " 
+       para que el modelo continúe con el nombre
+    
+    Ejemplo de prompt generado:
+    ---
+    You are a function calling assistant. Select the most appropriate function.
+    
+    Available functions:
+    - fn_add_numbers: Add two numbers
+    - fn_reverse_string: Reverse a string
+    - fn_factorial: Calculate factorial of a number
+    
+    User request: What is the sum of 40 and 2?
+    
+    Function to call: 
+    ---
+    
+    El modelo quiere continuar con "fn_add_numbers" porque es lo más
+    coherente con el contexto. Nosotros restringimos los tokens para que
+    SOLO pueda escribir uno de los nombres válidos.
+    """
+    fn_list = "\n".join(
+        f"- {fn.name}: {fn.description}"
+        for fn in functions
+    )
+    
+    return (
+        f"You are a function calling assistant. "
+        f"Select the most appropriate function.\n\n"
+        f"Available functions:\n{fn_list}\n\n"
+        f"User request: {user_prompt}\n\n"
+        f"Function to call: "
+    )
+
+
+def build_argument_prompt(
+    user_prompt: str,
+    fn_def: FunctionDefinition,
+    param_name: str,
+    already_extracted: dict[str, object]
+) -> str:
+    """
+    Construye el prompt para extraer un argumento concreto.
+    
+    Le damos contexto sobre la función y qué argumento queremos.
+    Si ya extrajimos otros argumentos, los incluimos para dar más contexto.
+    
+    Ejemplo para extraer 'b' habiendo ya extraído 'a'=40:
+    ---
+    Function: fn_add_numbers - Add two numbers
+    User request: What is the sum of 40 and 2?
+    Parameter 'a' (number): already extracted = 40.0
+    
+    Extract parameter 'b' (type: number):
+    Value: 
+    ---
+    """
+    param_type = fn_def.parameters[param_name].type
+    
+    context_parts = [
+        f"Function: {fn_def.name} - {fn_def.description}",
+        f"User request: {user_prompt}",
+    ]
+    
+    # Añadir los argumentos ya extraídos como contexto
+    for prev_name, prev_val in already_extracted.items():
+        prev_type = fn_def.parameters[prev_name].type
+        context_parts.append(
+            f"Parameter '{prev_name}' ({prev_type}): {prev_val}"
+        )
+    
+    context_parts.append(
+        f"\nExtract parameter '{param_name}' (type: {param_type}):\n"
+        f"Value: "
+    )
+    
+    return "\n".join(context_parts)
+
+PASO 6: src/function_caller.py — El orquestador
+pythonfrom typing import Any
+from llm_sdk import Small_LLM_Model
+from src.models import FunctionDefinition, FunctionCall
+from src.vocabulary import VocabularyIndex
+from src.constrained_decoder import JSONGenerator
+from src.prompt_builder import (
+    build_function_selection_prompt,
+    build_argument_prompt
+)
+
+
+class FunctionCaller:
+    """
+    Une todas las piezas para resolver un prompt completo.
+    
+    El flujo es:
+    
+    1. Recibe: "What is the sum of 40 and 2?" + lista de funciones
+    
+    2. Construye prompt de selección de función
+    
+    3. Usa JSONGenerator para elegir "fn_add_numbers"
+    
+    4. Para cada parámetro de fn_add_numbers (a, b):
+       a. Construye prompt de extracción
+       b. Usa JSONGenerator para extraer el valor con tipo correcto
+    
+    5. Ensambla el resultado:
+       FunctionCall(
+           prompt="What is the sum of 40 and 2?",
+           fn_name="fn_add_numbers",
+           args={"a": 40.0, "b": 2.0}
+       )
+    """
+
+    def __init__(self, model: Small_LLM_Model) -> None:
+        self.model = model
+        self.vocab = VocabularyIndex(model)
+        self.generator = JSONGenerator(model, self.vocab)
+
+    def resolve(
+        self,
+        prompt: str,
+        functions: list[FunctionDefinition]
+    ) -> FunctionCall:
+        """Resuelve un prompt completo."""
+        
+        # --- FASE 1: Seleccionar la función ---
+        selection_prompt = build_function_selection_prompt(prompt, functions)
+        selection_ids = self.model.encode(selection_prompt)
+        
+        fn_names = [fn.name for fn in functions]
+        chosen_name = self.generator.select_function_name(
+            selection_ids, fn_names
+        )
+        
+        # Encontrar la definición completa de la función elegida
+        fn_def = next(fn for fn in functions if fn.name == chosen_name)
+        
+        # --- FASE 2: Extraer los argumentos ---
+        args: dict[str, Any] = {}
+        
+        for param_name, param_def in fn_def.parameters.items():
+            arg_prompt = build_argument_prompt(
+                prompt, fn_def, param_name, args
+            )
+            arg_ids = self.model.encode(arg_prompt)
+            
+            # Extraer según el tipo del parámetro
+            if param_def.type in ("number", "float"):
+                args[param_name] = self.generator.extract_number(
+                    arg_ids, param_name
+                )
+            elif param_def.type == "integer":
+                value = self.generator.extract_number(arg_ids, param_name)
+                args[param_name] = int(value)
+            elif param_def.type == "boolean":
+                args[param_name] = self.generator.extract_boolean(arg_ids)
+            else:
+                # Por defecto, string
+                args[param_name] = self.generator.extract_string(
+                    arg_ids, param_name
+                )
+        
+        return FunctionCall(
+            prompt=prompt,
+            fn_name=chosen_name,
+            args=args
+        )
+
+PASO 7: src/__main__.py — El punto de entrada
+python"""
+Punto de entrada del programa.
+
+Se ejecuta con: uv run python -m src
+El -m hace que Python busque src/__main__.py y lo ejecute.
+"""
+
+import argparse
+import sys
+from pathlib import Path
+from llm_sdk import Small_LLM_Model
+from src.file_handler import (
+    load_function_definitions,
+    load_test_prompts,
+    write_results
+)
+from src.function_caller import FunctionCaller
+
+
+def parse_args() -> argparse.Namespace:
+    """
+    Define y procesa los argumentos de línea de comandos.
+    
+    --input: dónde están los archivos de entrada
+    --output: dónde escribir el resultado
+    
+    Si no se especifican, usa los valores por defecto del enunciado.
+    """
+    parser = argparse.ArgumentParser(
+        description="LLM Function Calling System - call me maybe"
+    )
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=Path("data/input"),
+        help="Directorio de entrada (default: data/input)"
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("data/output/function_calling_results.json"),
+        help="Archivo de salida (default: data/output/function_calling_results.json)"
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    """
+    Función principal. Devuelve 0 si todo va bien, 1 si hay error.
+    Esta convención es estándar en Unix: 0 = éxito, otro = error.
+    """
+    args = parse_args()
+    
+    # Resolver rutas de los archivos de entrada
+    if args.input.is_dir():
+        # Si --input es un directorio, buscamos los archivos dentro
+        definitions_path = args.input / "function_definitions.json"
+        tests_path = args.input / "function_calling_tests.json"
+    else:
+        # Si --input es un archivo, asumimos que es el de tests
+        # y buscamos definiciones en el mismo directorio
+        definitions_path = args.input.parent / "function_definitions.json"
+        tests_path = args.input
+    
+    # --- Cargar archivos de entrada ---
+    print("Cargando archivos de entrada...")
+    try:
+        functions = load_function_definitions(definitions_path)
+        prompts = load_test_prompts(tests_path)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    
+    print(f"  {len(functions)} funciones cargadas")
+    print(f"  {len(prompts)} prompts a procesar")
+    
+    # --- Cargar el modelo ---
+    print("\nCargando modelo LLM (puede tardar un momento)...")
+    try:
+        model = Small_LLM_Model()
+    except Exception as e:
+        print(f"Error cargando el modelo: {e}", file=sys.stderr)
+        return 1
+    print("  Modelo cargado.")
+    
+    # --- Procesar cada prompt ---
+    caller = FunctionCaller(model)
+    results = []
+    errors = 0
+    
+    print("\nProcesando prompts...")
+    for i, prompt in enumerate(prompts):
+        print(f"\n[{i+1}/{len(prompts)}] {prompt[:70]}...")
+        try:
+            result = caller.resolve(prompt, functions)
+            results.append(result)
+            print(f"  ✓ {result.fn_name}({result.args})")
+        except Exception as e:
+            print(f"  ✗ Error: {e}", file=sys.stderr)
+            errors += 1
+    
+    # --- Escribir resultados ---
+    print(f"\nEscribiendo resultados en {args.output}...")
+    try:
+        write_results(results, args.output)
+    except Exception as e:
+        print(f"Error escribiendo resultados: {e}", file=sys.stderr)
+        return 1
+    
+    # Resumen final
+    print(f"\n{'='*50}")
+    print(f"Completado: {len(results)} éxitos, {errors} errores")
+    print(f"Resultados en: {args.output}")
+    
+    return 0 if errors == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+Resumen visual del flujo completo
+ENTRADA: "What is the sum of 40 and 2?"
+         + function_definitions.json
+
+         ↓
+┌─────────────────────────────────┐
+│  1. Construir prompt de selección│
+│     "...Available functions:    │
+│      - fn_add_numbers: Add...   │
+│      Function to call: "        │
+└────────────┬────────────────────┘
+             ↓
+┌─────────────────────────────────┐
+│  2. Modelo genera logits         │
+│     token_"fn_add": 0.82        │
+│     token_"fn_rev": 0.03        │
+│     (solo permitimos fn names)  │
+│  → Elige: "fn_add_numbers"      │
+└────────────┬────────────────────┘
+             ↓
+┌─────────────────────────────────┐
+│  3. Extraer argumento "a"        │
+│     Prompt: "...Value of 'a': " │
+│     Solo tokens numéricos       │
+│     Modelo genera: "4", "0"     │
+│     → float("40") = 40.0        │
+└────────────┬────────────────────┘
+             ↓
+┌─────────────────────────────────┐
+│  4. Extraer argumento "b"        │
+│     (mismo proceso)             │
+│     → float("2") = 2.0          │
+└────────────┬────────────────────┘
+             ↓
+SALIDA: {
+  "prompt": "What is the sum of 40 and 2?",
+  "fn_name": "fn_add_numbers",
+  "args": {"a": 40.0, "b": 2.0}
+}
+La idea central es siempre la misma: en lugar de dejar al modelo escribir lo que quiera,
+en cada paso de generación filtramos los logits para que solo los tokens correctos puedan ser elegidos.
+El modelo pequeño puede tener ideas "incorrectas" sobre qué escribir, pero físicamente no puede,
+porque bloqueamos esas opciones antes de que se materialicen.

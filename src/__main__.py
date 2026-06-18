@@ -30,6 +30,7 @@ def main() -> None:
 
     try:
         my_model = Small_LLM_Model()
+
     except Exception as e:
         print(f"Error loading model: {e}", file=sys.stderr)
         return False
