@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import Any
+from src.models import FunctionDefinition, FunctionCall
 
 def json_reader(path: Path) -> Any:
 
@@ -12,25 +13,35 @@ def json_reader(path: Path) -> Any:
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
-            # PRINT FUNCTION LIST NOT NECESSARY
-
-            # for element in data:
-            #     name = element.get('name', "")
-            #     function_list.append(name)
-
-            # print("Functions:")
-            # for fn in function_list:
-            #     print("-", fn)
-
-            # PRINT FUNCTION LIST NOT NECESSARY
     except json.JSONDecodeError as e:
         print(f"Ocurrió un error al leer el JSON: {e}")
         return None
 
 
+
+def load_function_def(path: Path) -> list[FunctionDefinition]:
+
+    raw = json_reader(path)
+
+    if not isinstance(raw, list):
+        raise ValueError("function_definitions.json must contain an array JSON")
+    
+    definitions = []
+
+    for i, item in enumerate(raw):
+        try:
+            definitions.append(FunctionDefinition(**item))
+        except:
+             raise ValueError(f"Invalid definition in {i}: {e}") from e
+        
+    return definitions
+
+
+
 def json_exporter(decode_text: str, output_path) -> None:
 
     output_file = output_path / "response.txt"
+    
     output_path.mkdir(parents=True, exist_ok=True) 
 
     with open(output_file, "w", encoding="utf-8") as f:
@@ -51,10 +62,35 @@ def valid_json(json_path: Path) -> bool:
             return True
 
     except json.JSONDecodeError as e:
-        print(f"JSON Inválido: Error de sintaxis en la línea {e.lineno}, columna {e.colno}.")
-        print(f"Detalle: {e.msg}")
+        print("Invalid JSON: Syntax Error")
+        print(f"Detail: {e.msg}")
         return False
 
     except FileNotFoundError:
         print("El archivo no existe.")
         return False
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # PRINT FUNCTION LIST NOT NECESSARY
+
+            # for element in data:
+            #     name = element.get('name', "")
+            #     function_list.append(name)
+
+            # print("Functions:")
+            # for fn in function_list:
+            #     print("-", fn)
+
+            # PRINT FUNCTION LIST NOT NECESSARY

@@ -161,14 +161,9 @@ def generate_json(prompt):
     return my_model.decode(generated)
 
 
-# =========================
-# TEST
-# =========================
+# EJEMPLO USO
 
-prompt = """
-What is the sum of 2 and 3?
-"""
-
+prompt = "sum 4 plus 3"
 result = generate_json(prompt)
 
 print("\n\nRESULTADO:")
