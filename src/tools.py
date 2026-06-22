@@ -6,7 +6,7 @@ from src.models import FunctionDefinition, FunctionCall
 def json_reader(path: Path) -> Any:
 
     if not path.exists():
-        print(f"Error: El archivo no existe en la ruta {path.resolve()}")
+        print(f"Error: File doesn't exist in path {path.resolve()}")
         return False
 
     try:
@@ -14,7 +14,7 @@ def json_reader(path: Path) -> Any:
             return json.load(f)
 
     except json.JSONDecodeError as e:
-        print(f"Ocurrió un error al leer el JSON: {e}")
+        print(f"Error reading JSON: {e}")
         return None
 
 
@@ -38,11 +38,31 @@ def load_function_def(path: Path) -> list[FunctionDefinition]:
 
 
 
+
+def load_prompt(path: Path) -> list[str]:
+    raw = json_reader(path)
+
+    if not isinstance(raw, list):
+        raise ValueError("function_definitions.json must contain an array JSON")
+    
+    prompts = []
+
+    for i, item in enumerate(raw):
+        if not isinstance(item, str):
+            raise ValueError (
+                f"El prompt en índice {i} debe ser string, "
+                f"pero es {type(item).__name__}"
+            )
+        prompts.append(item)
+
+    return prompts
+
+
 def json_exporter(decode_text: str, output_path) -> None:
 
     output_file = output_path / "response.txt"
     
-    output_path.mkdir(parents=True, exist_ok=True) 
+    output_path.mkdir(parents=True, exist_ok=True)
 
     with open(output_file, "w", encoding="utf-8") as f:
         for c in decode_text:
@@ -50,6 +70,14 @@ def json_exporter(decode_text: str, output_path) -> None:
             f.write("\n")
             
     print(f"Resultado guardado en: {output_file}")
+
+    # output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # # Convertir objetos Pydantic a diccionarios
+    # output_data = [result.model_dump() for result in results]
+    
+    # with open(output_path, "w", encoding="utf-8") as f:
+    #     json.dump(output_data, f, indent=2)
 
 
 # validacion rapida con json para saber si esta bien escrito 
@@ -67,7 +95,7 @@ def valid_json(json_path: Path) -> bool:
         return False
 
     except FileNotFoundError:
-        print("El archivo no existe.")
+        print("File doesn't exists.")
         return False
 
 

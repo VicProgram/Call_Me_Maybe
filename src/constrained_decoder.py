@@ -5,33 +5,6 @@ from models import State
 from llm_sdk import Small_LLM_Model
 
 
-# =========================
-# MODELO
-# =========================
-
-my_model = Small_LLM_Model()
-
-
- 
-
-# =========================
-# VOCABULARIO
-# =========================
-
-with open(my_model.get_path_to_vocabulary_json()) as f:
-    vocab = json.load(f)
-
-token_to_id = {}
-id_to_token = {}
-
-for token_id, token_text in vocab.items():
-
-    token_id = int(token_id)
-
-    token_to_id[token_text] = token_id
-    id_to_token[token_id] = token_text
-
-
 def token_of(text: str):
 
     if text not in token_to_id:
@@ -41,8 +14,6 @@ def token_of(text: str):
 
 
 # function names(lo tengo en lista)
-
-
 
 def get_valid_tokens(state: State):
 
@@ -82,11 +53,6 @@ def get_valid_tokens(state: State):
         }
     return set()
 
-
-
-# =========================
-# GENERACIÓN
-# =========================
 
 def generate_token(input_ids, state):
 

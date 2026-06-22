@@ -44,9 +44,6 @@ class FunctionDefinition(BaseModel):
         return v
 
 
-
-
-
 class FunctionCall(BaseModel):
     """Representa el resultado de una llamada a función."""
     prompt: str
