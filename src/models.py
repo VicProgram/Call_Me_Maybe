@@ -3,16 +3,6 @@ from pydantic import BaseModel, field_validator, Field
 from enum import Enum
 
 
-class State(Enum):
-    START = 0
-    FN_NAME_KEY = 1
-    FN_NAME_VALUE = 2
-    ARGS_KEY = 3
-    ARG_NAME = 4
-    ARG_VALUE = 5
-    END = 6
-
-
 class ParameterType(Enum):
     NUMBER = "number"
     STRING = "string"

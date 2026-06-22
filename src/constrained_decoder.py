@@ -1,10 +1,31 @@
 import json
 import numpy as np
-from enum import Enum
+from enum import Enum, auto
 from models import State
 from llm_sdk import Small_LLM_Model
+from src.vocab import VocabIndex
 
 
+my_model = Small_LLM_Model()
+
+class State(Enum):
+    START = auto()
+    FN_NAME_KEY = auto()
+    FN_NAME_COLON = auto()
+    FN_NAME_VALUE = auto()
+    COMMA_AFTER_FN = auto()
+    ARGS_KEY = auto()
+    ARGS_COLON = auto()
+    ARGS_OPEN = auto()
+    PARAM_KEY = auto()
+    PARAM_COLON = auto()
+    PARAM_VALUE = auto()        # para strings
+    PARAM_VALUE_NUM = auto()    # para números, token a token
+    COMMA_OR_ARGS_CLOSE = auto()
+    ARGS_CLOSE = auto()
+    END = auto()
+
+    
 def token_of(text: str):
 
     if text not in token_to_id:
@@ -129,8 +150,41 @@ def generate_json(prompt):
 
 # EJEMPLO USO
 
-prompt = "sum 4 plus 3"
-result = generate_json(prompt)
 
-print("\n\nRESULTADO:")
-print(result)
+
+
+
+import math
+from typing import Any
+import numpy as np
+import torch
+from llm_sdk import Small_LLM_Model
+from src.vocabulary import VocabularyIndex
+
+
+def get_next_token_logits(
+        model: Small_LLM_Model, input_ids: list[int]
+        ) -> np.ndarray:
+
+    tensor = torch.tensor([input_ids])
+    logits = model.get_logits_from_input_ids(tensor)
+
+    return logits[0, -1, :].float().numpy()
+
+
+def apply_mask(logits: np.ndarray, valid_ids: list[int]) -> np.ndarray:
+    
+    masked = np.full(len(logits), -math.inf)
+    for tid in valid_ids:
+        if 0 <= tid < len(logits):
+            masked[tid] = logits[tid]
+    return masked
+
+
+def select_best_token(masked_logits: np.ndarray) -> int | None:
+
+    best = int(np.argmax(masked_logits))
+    if masked_logits[best] == -math.inf:
+        return None
+
+    return best
