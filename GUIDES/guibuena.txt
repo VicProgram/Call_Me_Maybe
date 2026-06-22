@@ -1045,3 +1045,377 @@ La idea central es siempre la misma: en lugar de dejar al modelo escribir lo que
 en cada paso de generación filtramos los logits para que solo los tokens correctos puedan ser elegidos.
 El modelo pequeño puede tener ideas "incorrectas" sobre qué escribir, pero físicamente no puede,
 porque bloqueamos esas opciones antes de que se materialicen.
+
+
+
+
+Sí, es muy útil. Es la base correcta del autómata de estados. Te explico qué tienes, qué le falta y cómo completarlo.
+
+Lo que tienes y por qué es bueno
+Tu código ya tiene la estructura correcta:
+Estado → genera token válido → avanza al siguiente estado → repite
+Eso es exactamente la decodificación restringida. El problema es que tu autómata solo cubre la "columna vertebral" del JSON:
+{  →  "fn_name"  →  <nombre_función>  →  "args"  →  }
+Pero le faltan tres cosas importantes:
+
+Los dos puntos y las comas entre cada pieza
+Los argumentos dentro de "args": { ... }
+El objeto input_ids que le pasas — el modelo necesita un tensor, no una lista directa en algunos SDKs
+
+
+El JSON completo que necesitas generar
+json{"fn_name": "fn_add_numbers", "args": {"a": 40.0, "b": 2.0}}
+Desglosado token a token, los estados que necesitas son:
+{                    ← START
+"fn_name"            ← FN_NAME_KEY  
+:                    ← FN_NAME_COLON
+"fn_add_numbers"     ← FN_NAME_VALUE
+,                    ← COMMA_AFTER_FN
+"args"               ← ARGS_KEY
+:                    ← ARGS_COLON
+{                    ← ARGS_OPEN
+"a"                  ← PARAM_KEY        (dinámico, depende de la función)
+:                    ← PARAM_COLON
+40.0                 ← PARAM_VALUE_NUM  (o string, o bool)
+,                    ← COMMA_AFTER_PARAM (o } si es el último)
+"b"                  ← PARAM_KEY
+:                    ← PARAM_COLON
+2.0                  ← PARAM_VALUE_NUM
+}                    ← ARGS_CLOSE
+}                    ← END
+
+El código completo que extiende lo tuyo
+pythonimport numpy as np
+from enum import Enum, auto
+from typing import Any
+
+# Asumiendo que tienes my_model, token_to_id, id_to_token, FUNCTION_NAMES
+# ya inicializados como los tienes
+
+
+class State(Enum):
+    START = auto()
+    FN_NAME_KEY = auto()
+    FN_NAME_COLON = auto()
+    FN_NAME_VALUE = auto()
+    COMMA_AFTER_FN = auto()
+    ARGS_KEY = auto()
+    ARGS_COLON = auto()
+    ARGS_OPEN = auto()
+    PARAM_KEY = auto()
+    PARAM_COLON = auto()
+    PARAM_VALUE = auto()        # para strings
+    PARAM_VALUE_NUM = auto()    # para números, token a token
+    COMMA_OR_ARGS_CLOSE = auto()
+    ARGS_CLOSE = auto()
+    END = auto()
+
+
+def token_of(text: str) -> int:
+    if text not in token_to_id:
+        raise ValueError(f"Token no encontrado: '{text}'")
+    return token_to_id[text]
+
+
+def get_valid_tokens(
+    state: State,
+    param_keys: list[str],          # nombres de parámetros que quedan
+    param_types: dict[str, str],     # tipo de cada parámetro
+    current_param: str,              # parámetro que estamos extrayendo ahora
+    num_accumulated: str             # dígitos acumulados si estamos en número
+) -> set[int]:
+    """
+    Devuelve el conjunto de token IDs válidos para el estado actual.
+    
+    Los parámetros extra son necesarios porque algunos estados son
+    dinámicos: PARAM_KEY depende de qué parámetros quedan por extraer,
+    y PARAM_VALUE_NUM depende de qué dígitos llevamos acumulados.
+    """
+
+    if state == State.START:
+        return {token_of("{")}
+
+    elif state == State.FN_NAME_KEY:
+        return {token_of('"fn_name"')}
+
+    elif state == State.FN_NAME_COLON:
+        return {token_of(":")}
+
+    elif state == State.FN_NAME_VALUE:
+        # Solo los nombres de función válidos
+        valid = set()
+        for fn in FUNCTION_NAMES:
+            if fn in token_to_id:
+                valid.add(token_of(fn))
+        return valid
+
+    elif state == State.COMMA_AFTER_FN:
+        return {token_of(",")}
+
+    elif state == State.ARGS_KEY:
+        return {token_of('"args"')}
+
+    elif state == State.ARGS_COLON:
+        return {token_of(":")}
+
+    elif state == State.ARGS_OPEN:
+        return {token_of("{")}
+
+    elif state == State.PARAM_KEY:
+        # Solo las claves de los parámetros que quedan
+        # Si ya extrajimos "a", aquí solo aparece "b", etc.
+        valid = set()
+        for key in param_keys:
+            quoted = f'"{key}"'
+            if quoted in token_to_id:
+                valid.add(token_of(quoted))
+        return valid
+
+    elif state == State.PARAM_COLON:
+        return {token_of(":")}
+
+    elif state == State.PARAM_VALUE:
+        # Para strings: cualquier token excepto los que rompen estructura
+        # Esta es una simplificación — en la práctica necesitas más lógica
+        blocked = {"{", "}", "[", "]", "\n"}
+        valid = set()
+        for text, tid in token_to_id.items():
+            if text not in blocked:
+                valid.add(tid)
+        return valid
+
+    elif state == State.PARAM_VALUE_NUM:
+        # Para números: dígitos, punto decimal, signo negativo
+        # La restricción cambia según lo que llevamos acumulado
+        valid = set()
+        
+        for text, tid in token_to_id.items():
+            # Tokens que son puramente numéricos
+            is_digits = text.lstrip("-").replace(".", "", 1).isdigit()
+            # Signo negativo solo al inicio
+            is_minus = text == "-" and not num_accumulated
+            # Punto decimal solo si no hay ya uno
+            is_dot = text == "." and "." not in num_accumulated
+            
+            if is_digits or is_minus or is_dot:
+                valid.add(tid)
+        
+        # También permitimos terminadores para saber cuándo parar
+        # (los detectamos en generate_token pero no los añadimos al número)
+        for term in [",", "}", " ", "\n"]:
+            if term in token_to_id:
+                valid.add(token_of(term))
+        
+        return valid
+
+    elif state == State.COMMA_OR_ARGS_CLOSE:
+        # Si quedan parámetros: coma. Si no quedan: cierre
+        if param_keys:
+            return {token_of(",")}
+        else:
+            return {token_of("}")}
+
+    elif state == State.ARGS_CLOSE:
+        return {token_of("}")}
+
+    elif state == State.END:
+        return {token_of("}")}
+
+    return set()
+
+
+def generate_token(
+    input_ids: list[int],
+    state: State,
+    param_keys: list[str],
+    param_types: dict[str, str],
+    current_param: str,
+    num_accumulated: str
+) -> int:
+    """
+    Genera el siguiente token aplicando la máscara de tokens válidos.
+    Tu función original, extendida con los parámetros extra.
+    """
+    import torch
+    tensor = torch.tensor([input_ids])
+    logits = my_model.get_logits_from_input_ids(tensor)
+
+    # Sacar la última posición: [1, seq_len, vocab] → [vocab]
+    if len(logits.shape) == 3:
+        logits = logits[0, -1, :]
+    elif len(logits.shape) == 2:
+        logits = logits[-1, :]
+
+    logits = logits.float().numpy()
+
+    valid_tokens = get_valid_tokens(
+        state, param_keys, param_types, current_param, num_accumulated
+    )
+
+    for token_id in range(len(logits)):
+        if token_id not in valid_tokens:
+            logits[token_id] = -np.inf
+
+    next_token = int(np.argmax(logits))
+    return next_token
+
+
+def update_state(
+    state: State,
+    token: int,
+    param_keys: list[str],
+    num_accumulated: str
+) -> State:
+    """
+    Tu función original extendida con los nuevos estados.
+    
+    La lógica de PARAM_VALUE_NUM es especial: permanece en ese estado
+    mientras el token sea parte de un número, y avanza cuando detecta
+    un terminador (coma, llave, espacio).
+    """
+    token_text = id_to_token.get(token, "")
+
+    if state == State.START:
+        return State.FN_NAME_KEY
+
+    elif state == State.FN_NAME_KEY:
+        return State.FN_NAME_COLON
+
+    elif state == State.FN_NAME_COLON:
+        return State.FN_NAME_VALUE
+
+    elif state == State.FN_NAME_VALUE:
+        return State.COMMA_AFTER_FN
+
+    elif state == State.COMMA_AFTER_FN:
+        return State.ARGS_KEY
+
+    elif state == State.ARGS_KEY:
+        return State.ARGS_COLON
+
+    elif state == State.ARGS_COLON:
+        return State.ARGS_OPEN
+
+    elif state == State.ARGS_OPEN:
+        return State.PARAM_KEY
+
+    elif state == State.PARAM_KEY:
+        return State.PARAM_COLON
+
+    elif state == State.PARAM_COLON:
+        # El siguiente estado depende del tipo del parámetro actual
+        # Esto lo maneja generate_json pasando el tipo
+        return State.PARAM_VALUE_NUM  # por defecto números; ajusta según tipo
+
+    elif state == State.PARAM_VALUE_NUM:
+        # Si el token es un terminador, avanzamos
+        if token_text in [",", "}", " ", "\n"]:
+            return State.COMMA_OR_ARGS_CLOSE
+        # Si sigue siendo parte del número, nos quedamos aquí
+        return State.PARAM_VALUE_NUM
+
+    elif state == State.PARAM_VALUE:
+        # Para strings: avanzamos cuando detectamos fin de valor
+        if token_text in ["\n", '",']:
+            return State.COMMA_OR_ARGS_CLOSE
+        return State.PARAM_VALUE
+
+    elif state == State.COMMA_OR_ARGS_CLOSE:
+        if token_text == ",":
+            return State.PARAM_KEY
+        else:
+            return State.END
+
+    elif state == State.ARGS_CLOSE:
+        return State.END
+
+    return State.END
+
+
+def generate_json(
+    prompt: str,
+    fn_name: str,
+    fn_params: dict[str, str]   # {"a": "number", "b": "number"}
+) -> dict[str, Any]:
+    """
+    Versión completa de tu generate_json.
+    
+    Recibe el nombre de función ya elegido y los parámetros a extraer.
+    Genera el JSON completo token a token con restricciones.
+    
+    Devuelve un diccionario Python con fn_name y args.
+    """
+    prompt_ids = my_model.encode(prompt)
+    generated: list[int] = []
+
+    state = State.START
+
+    # Estado mutable del proceso
+    param_keys_remaining = list(fn_params.keys())
+    current_param = ""
+    num_accumulated = ""
+    extracted_args: dict[str, Any] = {}
+
+    print("\nGenerando JSON: ", end="")
+
+    while state != State.END:
+        current_ids = prompt_ids + generated
+
+        next_token = generate_token(
+            current_ids,
+            state,
+            param_keys_remaining,
+            fn_params,
+            current_param,
+            num_accumulated
+        )
+
+        token_text = id_to_token.get(next_token, "")
+
+        # --- Lógica especial según el estado ---
+
+        if state == State.PARAM_KEY:
+            # Extraer el nombre del parámetro del token (quitar comillas)
+            current_param = token_text.strip('"')
+
+        elif state == State.PARAM_VALUE_NUM:
+            if token_text in [",", "}", " ", "\n"]:
+                # Terminador: guardamos el número acumulado
+                try:
+                    extracted_args[current_param] = float(num_accumulated)
+                except ValueError:
+                    extracted_args[current_param] = 0.0
+                num_accumulated = ""
+                # Eliminar el parámetro de la lista pendiente
+                if current_param in param_keys_remaining:
+                    param_keys_remaining.remove(current_param)
+                # NO añadimos el terminador a generated (es estructural)
+                state = update_state(state, next_token, param_keys_remaining, num_accumulated)
+                print(token_text, end="")
+                continue
+            else:
+                # Parte del número: acumular
+                num_accumulated += token_text
+
+        # Añadir token a la secuencia generada
+        generated.append(next_token)
+        print(token_text, end="")
+
+        # Avanzar estado
+        state = update_state(
+            state, next_token, param_keys_remaining, num_accumulated
+        )
+
+    print()  # salto de línea al final
+
+    return {
+        "fn_name": fn_name,
+        "args": extracted_args
+    }
+
+Qué cambió respecto a lo tuyo y por qué
+Lo tuyo tenía 5 estados. La versión completa tiene 14. La diferencia principal:
+Antes: FN_NAME_VALUE → ARGS_KEY (saltaba los dos puntos y la coma)
+Ahora: FN_NAME_VALUE → COMMA_AFTER_FN → ARGS_KEY → ARGS_COLON → ARGS_OPEN — cada token estructural tiene su propio estado porque el modelo tiene que generarlo, y necesitas saber exactamente qué token es válido en cada momento.
+Lo nuevo más importante es PARAM_VALUE_NUM: es el único estado que permanece en sí mismo — mientras el modelo siga generando dígitos, te quedas en ese estado acumulando el número. Cuando llega una coma o una llave, guardas el número y avanzas.
+Tu estructura base es correcta y reutilizable. Solo necesitabas más estados y la lógica de acumulación para los valores.
