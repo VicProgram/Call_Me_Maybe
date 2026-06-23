@@ -95,7 +95,7 @@ def get_valid_tokens(
     elif state == State.PARAM_VALUE_NUM:
         valid = set()
         for text, tid in token_to_id.items():
-            
+
             is_digits = text.lstrip("-").replace(".", "", 1).isdigit()
             is_minus = text == "-" and not num_accumulated
             is_dot = text == "." and "." not in num_accumulated
