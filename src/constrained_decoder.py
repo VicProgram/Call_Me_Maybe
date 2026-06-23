@@ -101,7 +101,7 @@ def get_valid_tokens(
             is_dot = text == "." and "." not in num_accumulated
 
             if is_digits or is_minus or is_dot:
-                valid.update(ids)
+                valid.update(tid)
 
         for term in [",", "}", " ", "\n"]:
             if term in token_to_id:
@@ -110,7 +110,7 @@ def get_valid_tokens(
         return valid
 
     elif state == State.PARAM_VALUE:
-        # blocked = {"{", "}", "[", "]", "\n"}
+        blocked = {"{", "}", "[", "]", "\n"}
         # return {tid for text, tid in token_to_id.items() if text not in blocked}
         valid = set()
         for text, ids in token_to_id.items():
