@@ -38,6 +38,25 @@ def load_function_def(path: Path) -> list[FunctionDefinition]:
 
 
 
+# def load_prompt(path: Path) -> list[str]:
+#     raw = json_reader(path)
+
+#     if not isinstance(raw, list):
+#         raise ValueError("function_definitions.json must contain an array JSON")
+    
+#     prompts = []
+
+#     for i, item in enumerate(raw):
+#         if not isinstance(item, str):
+#             raise ValueError (
+#                 f"El prompt en índice {i} debe ser string, "
+#                 f"pero es {type(item).__name__}"
+#             )
+#         prompts.append(item)
+
+#     return prompts
+
+
 def load_prompt(path: Path) -> list[str]:
     raw = json_reader(path)
 
@@ -47,12 +66,21 @@ def load_prompt(path: Path) -> list[str]:
     prompts = []
 
     for i, item in enumerate(raw):
-        if not isinstance(item, str):
+        # Si es un diccionario, extraemos el valor de la clave 'prompt'
+        if isinstance(item, dict):
+            texto = item.get("prompt")
+            if texto is None:
+                raise ValueError(f"El diccionario en el índice {i} no tiene la clave 'prompt'")
+            prompts.append(str(texto))
+        # Si ya es un string, lo añadimos directamente
+        elif isinstance(item, str):
+            prompts.append(item)
+        # Si es cualquier otra cosa, lanzamos el error
+        else:
             raise ValueError (
-                f"El prompt en índice {i} debe ser string, "
+                f"El prompt en índice {i} debe ser string o dict, "
                 f"pero es {type(item).__name__}"
             )
-        prompts.append(item)
 
     return prompts
 

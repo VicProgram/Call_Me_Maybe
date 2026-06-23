@@ -81,10 +81,12 @@ def get_valid_tokens(
 
     elif state == State.PARAM_KEY:
         valid = set()
+
         for key in param_keys:
             quoted = f'"{key}"'
             if quoted in token_to_id:
                 valid.add(token_of(quoted))
+
         return valid                        
 
     elif state == State.PARAM_COLON:
@@ -96,11 +98,14 @@ def get_valid_tokens(
             is_digits = text.lstrip("-").replace(".", "", 1).isdigit()
             is_minus = text == "-" and not num_accumulated
             is_dot = text == "." and "." not in num_accumulated
+
             if is_digits or is_minus or is_dot:
                 valid.add(tid)
+
         for term in [",", "}", " ", "\n"]:
             if term in token_to_id:
                 valid.add(token_of(term))
+                
         return valid
 
     elif state == State.PARAM_VALUE:
@@ -144,7 +149,11 @@ def generate_token(
     valid_tokens = get_valid_tokens(
         state, param_keys, param_types, current_param, num_accumulated
     )
-
+    
+    if not valid_tokens:
+        print(f"No hay tokens válidos para el estado {state}. Usando fallback.")
+        valid_tokens = set(range(len(logits)))
+        
     for token_id in range(len(logits)):
         if token_id not in valid_tokens:
             logits[token_id] = -np.inf
@@ -164,39 +173,56 @@ def update_state(
 
     if state == State.START:
         return State.FN_NAME_KEY
+    
     elif state == State.FN_NAME_KEY:
         return State.FN_NAME_COLON
+    
     elif state == State.FN_NAME_COLON:
         return State.FN_NAME_VALUE
+    
     elif state == State.FN_NAME_VALUE:
         return State.COMMA_AFTER_FN
+    
     elif state == State.COMMA_AFTER_FN:
         return State.ARGS_KEY
+    
     elif state == State.ARGS_KEY:
         return State.ARGS_COLON
+    
     elif state == State.ARGS_COLON:
         return State.ARGS_OPEN
+    
     elif state == State.ARGS_OPEN:
         return State.PARAM_KEY
+    
     elif state == State.PARAM_KEY:
         return State.PARAM_COLON
+    
     elif state == State.PARAM_COLON:                      
         param_type = fn_params.get(current_param, "string")
         if param_type in ("number", "integer", "float"):
             return State.PARAM_VALUE_NUM
+        
         return State.PARAM_VALUE
+    
     elif state == State.PARAM_VALUE_NUM:
         if token_text in [",", "}", " ", "\n"]:
             return State.COMMA_OR_ARGS_CLOSE
+        
         return State.PARAM_VALUE_NUM
+    
     elif state == State.PARAM_VALUE:
         if token_text in ["\n", '","']:
             return State.COMMA_OR_ARGS_CLOSE
+        
         return State.PARAM_VALUE
+    
     elif state == State.COMMA_OR_ARGS_CLOSE:
         if token_text == ",":
             return State.PARAM_KEY
+        
         return State.END
+    
     elif state == State.ARGS_CLOSE:
         return State.END
 

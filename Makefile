@@ -22,6 +22,7 @@ all: install run
 
 install:
 	uv sync
+
 run:
 	PYTHONPATH=. uv run python3 -m src
 
