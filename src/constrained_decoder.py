@@ -40,8 +40,8 @@ class State(Enum):
 def token_of(text: str) -> int:
     if text not in token_to_id:
         raise ValueError(f"Token no encontrado: '{text}'")
-    return token_to_id[text]
-
+    ids = token_to_id[text]
+    return ids[0]
 
 def get_valid_tokens(
     state: State,
@@ -95,12 +95,13 @@ def get_valid_tokens(
     elif state == State.PARAM_VALUE_NUM:
         valid = set()
         for text, tid in token_to_id.items():
+            
             is_digits = text.lstrip("-").replace(".", "", 1).isdigit()
             is_minus = text == "-" and not num_accumulated
             is_dot = text == "." and "." not in num_accumulated
 
             if is_digits or is_minus or is_dot:
-                valid.add(tid)
+                valid.update(ids)
 
         for term in [",", "}", " ", "\n"]:
             if term in token_to_id:
@@ -109,9 +110,13 @@ def get_valid_tokens(
         return valid
 
     elif state == State.PARAM_VALUE:
-        blocked = {"{", "}", "[", "]", "\n"}
-        return {tid for text, tid in token_to_id.items() if text not in blocked}
-
+        # blocked = {"{", "}", "[", "]", "\n"}
+        # return {tid for text, tid in token_to_id.items() if text not in blocked}
+        valid = set()
+        for text, ids in token_to_id.items():
+            if text not in blocked:
+                valid.update(ids)
+        return valid
     elif state == State.COMMA_OR_ARGS_CLOSE:
         if param_keys:
             return {token_of(",")}
