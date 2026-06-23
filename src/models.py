@@ -11,7 +11,7 @@ class ParameterType(Enum):
 class ParameterDefinition(BaseModel):
     """Define el tipo de un parámetro de función."""
 
-    type: ParameterType
+    type: str
     # description: str | None = None
 
 

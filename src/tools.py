@@ -6,8 +6,7 @@ from src.models import FunctionDefinition, FunctionCall
 def json_reader(path: Path) -> Any:
 
     if not path.exists():
-        print(f"Error: File doesn't exist in path {path.resolve()}")
-        return False
+        raise FileNotFoundError(f"Archivo no encontrado: {path}")
 
     try:
         with open(path, 'r', encoding='utf-8') as f:
@@ -31,8 +30,8 @@ def load_function_def(path: Path) -> list[FunctionDefinition]:
     for i, item in enumerate(raw):
         try:
             definitions.append(FunctionDefinition(**item))
-        except:
-             raise ValueError(f"Invalid definition in {i}: {e}") from e
+        except Exception as e:
+            raise ValueError(f"Invalid definition in {i}: {e}") from e
         
     return definitions
 
@@ -58,30 +57,16 @@ def load_prompt(path: Path) -> list[str]:
     return prompts
 
 
-def json_exporter(decode_text: str, output_path) -> None:
+def json_exporter(results: list[FunctionCall], output_path: Path) -> None:
 
-    output_file = output_path / "response.txt"
-    
-    output_path.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_data = [result.model_dump() for result in results]
 
-    with open(output_file, "w", encoding="utf-8") as f:
-        for c in decode_text:
-            f.write(c)
-            f.write("\n")
-            
-    print(f"Resultado guardado en: {output_file}")
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(output_data, f, indent=2, ensure_ascii=False)
 
-    # output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    # # Convertir objetos Pydantic a diccionarios
-    # output_data = [result.model_dump() for result in results]
-    
-    # with open(output_path, "w", encoding="utf-8") as f:
-    #     json.dump(output_data, f, indent=2)
+    print(f"Resultado guardado en: {output_path}")
 
-
-# validacion rapida con json para saber si esta bien escrito 
-# o si es un json correcto
 
 def valid_json(json_path: Path) -> bool:
     try:

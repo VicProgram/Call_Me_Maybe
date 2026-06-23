@@ -6,7 +6,7 @@ def build_function_selection_prompt(
 ) -> str:
     
     fn_list = "\n".join(
-        f"- {fn_name}: {fn.description}"
+        f"- {fn.name}: {fn.description}"
         for fn in functions
     )
 
@@ -25,7 +25,7 @@ def build_arg_prompt(
     already_extracted: dict[str, object]    
 ) -> str:
     
-    param_type = fndef.params[param_name].type
+    param_type = fn_def.params[param_name].type
 
     lines = [
         f"Function: {fn_def.name} - {fn_def.description}",

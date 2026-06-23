@@ -2,12 +2,12 @@ import argparse
 import sys
 from pathlib import Path
 from llm_sdk import Small_LLM_Model
-from src.file_handler import (
-    load_function_definitions,
-    load_test_prompts,
-    write_results
-)
 from src.function_caller import FunctionCaller
+from src.tools import (
+    load_function_def,
+    load_prompt,
+    json_exporter
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("data/input"),
+        default=Path("data/input/functions_definition.json"),
         help="Directorio de entrada (default: data/input)"
     )
     parser.add_argument(
@@ -34,17 +34,17 @@ def main() -> int:
     args = parse_args()
     
     if args.input.is_dir():
-        definitions_path = args.input / "function_definitions.json"
+        definitions_path = args.input / "functions_definition.json"
         tests_path = args.input / "function_calling_tests.json"
     else:
-        definitions_path = args.input.parent / "function_definitions.json"
+        definitions_path = args.input.parent / "functions_definition.json"
         tests_path = args.input
     
     # --- Cargar entrada
     print("Cargando archivos de entrada...")
     try:
-        functions = load_function_definitions(definitions_path)
-        prompts = load_test_prompts(tests_path)
+        functions = load_function_def(definitions_path)
+        prompts = load_prompt(tests_path)
     except (FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
@@ -80,7 +80,7 @@ def main() -> int:
     # Escribir resultados
     print(f"\nEscribiendo resultados en {args.output}...")
     try:
-        write_results(results, args.output)
+        json_exporter(results, args.output)
     except Exception as e:
         print(f"Error escribiendo resultados: {e}", file=sys.stderr)
         return 1

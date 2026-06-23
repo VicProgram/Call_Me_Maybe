@@ -4,13 +4,13 @@ from llm_sdk import Small_LLM_Model
 
 class VocabIndex:
     def __init__(self, model: Small_LLM_Model) -> None:
-        vocab_path = model.get_path_to_vocabulary_json()
+        vocab_path = model.get_path_to_vocab_file()
 
         with open(vocab_path, "r", encoding="utf-8") as f:
             raw: dict[str, str] = json.load(f)
 
-            self.id_to_token: dict[int. str] = {
-                int(k): v for k, v in raw.items()
+            self.id_to_token: dict[int, str] = {
+                int(v): k for k, v in raw.items()
             }
 
             self.token_to_ids: dict[str, list[int]] = {}
