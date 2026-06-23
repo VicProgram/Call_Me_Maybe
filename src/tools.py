@@ -98,27 +98,3 @@ def valid_json(json_path: Path) -> bool:
         print("File doesn't exists.")
         return False
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-            # PRINT FUNCTION LIST NOT NECESSARY
-
-            # for element in data:
-            #     name = element.get('name', "")
-            #     function_list.append(name)
-
-            # print("Functions:")
-            # for fn in function_list:
-            #     print("-", fn)
-
-            # PRINT FUNCTION LIST NOT NECESSARY

@@ -23,7 +23,7 @@ all: install run
 install:
 	uv sync
 run:
-	uv run python3 -m src 
+	PYTHONPATH=. uv run python3 -m src
 
 lint:
 	@echo "Comprobando linter..."
