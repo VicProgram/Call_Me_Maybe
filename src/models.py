@@ -1,17 +1,6 @@
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, field_validator, Field
 from enum import Enum
-from typing import Dict
-
-
-class State(Enum):
-    START = 0
-    FN_NAME_KEY = 1
-    FN_NAME_VALUE = 2
-    ARGS_KEY = 3
-    ARG_NAME = 4
-    ARG_VALUE = 5
-    END = 6
 
 
 class ParameterType(Enum):
@@ -22,21 +11,34 @@ class ParameterType(Enum):
 class ParameterDefinition(BaseModel):
     """Define el tipo de un parámetro de función."""
 
-    type: ParameterType
-    description: str | None = None
+    type: str
+    # description: str | None = None
 
 
 class FunctionDefinition(BaseModel):
     """Define una función que el sistema puede llamar."""
     name: str
-    parameters: Dict[str, ParameterDefinition] = Field(..., default_factory=dict)
+    description: str
+    parameters: dict[str, ParameterDefinition] = Field(..., default_factory=dict)
+    returns: dict[str, Any]
+
+    @field_validator("parameters", mode="before")
+    @classmethod
+    def parse_parameters(cls, v: Any) -> dict[str, ParameterDefinition]:
+        if isinstance(v, dict):
+            return {
+            key: ParameterDefinition(**val) if isinstance(val, dict) else
+            val for key, val in v.items()
+        }
+
+        return v
 
 
 class FunctionCall(BaseModel):
     """Representa el resultado de una llamada a función."""
     prompt: str
     fn_name: str
-    args: Dict[str, Any] = Field(default_factory=dict)
+    args: dict[str, Any] = Field(default_factory=dict)
 
 
 class TestPrompt(BaseModel):
