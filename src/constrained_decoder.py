@@ -1,298 +1,232 @@
 import json
-import math
-from enum import Enum, auto
+import re
 from typing import Any
 
 import numpy as np
-import torch
 
 from llm_sdk import Small_LLM_Model
 from src.vocab import VocabIndex
+from src.models import FunctionDefinition
 
 
 my_model = Small_LLM_Model()
 vocab = VocabIndex(my_model)
-token_to_id = vocab.token_to_ids
 id_to_token = vocab.id_to_token
 
-# Se rellena cuando se cargan las definiciones de funciones
 FUNCTION_NAMES: list[str] = []
-
-
-class State(Enum):
-    START = auto()
-    FN_NAME_KEY = auto()
-    FN_NAME_COLON = auto()
-    FN_NAME_VALUE = auto()
-    COMMA_AFTER_FN = auto()
-    ARGS_KEY = auto()
-    ARGS_COLON = auto()
-    ARGS_OPEN = auto()
-    PARAM_KEY = auto()
-    PARAM_COLON = auto()
-    PARAM_VALUE = auto()
-    PARAM_VALUE_NUM = auto()
-    COMMA_OR_ARGS_CLOSE = auto()
-    ARGS_CLOSE = auto()
-    END = auto()
-
-
-def token_of(text: str) -> int:
-    if text not in token_to_id:
-        raise ValueError(f"Token no encontrado: '{text}'")
-    ids = token_to_id[text]
-    return ids[0]
-
-def get_valid_tokens(
-    state: State,
-    param_keys: list[str],
-    param_types: dict[str, str],
-    current_param: str,
-    num_accumulated: str,
-) -> set[int]:
-
-    if state == State.START:
-        return {token_of("{")}
-
-    elif state == State.FN_NAME_KEY:
-        return {token_of('"fn_name"')}
-
-    elif state == State.FN_NAME_COLON:
-        return {token_of(":")}
-
-    elif state == State.FN_NAME_VALUE:
-        valid = set()
-        for fn in FUNCTION_NAMES:
-            if fn in token_to_id:
-                valid.add(token_of(fn))
-        return valid                        
-
-    elif state == State.COMMA_AFTER_FN:
-        return {token_of(",")}
-
-    elif state == State.ARGS_KEY:
-        return {token_of('"args"')}
-
-    elif state == State.ARGS_COLON:
-        return {token_of(":")}
-
-    elif state == State.ARGS_OPEN:
-        return {token_of("{")}
-
-    elif state == State.PARAM_KEY:
-        valid = set()
-
-        for key in param_keys:
-            quoted = f'"{key}"'
-            if quoted in token_to_id:
-                valid.add(token_of(quoted))
-
-        return valid                        
-
-    elif state == State.PARAM_COLON:
-        return {token_of(":")}
-
-    elif state == State.PARAM_VALUE_NUM:
-        valid = set()
-        for text, tid in token_to_id.items():
-
-            is_digits = text.lstrip("-").replace(".", "", 1).isdigit()
-            is_minus = text == "-" and not num_accumulated
-            is_dot = text == "." and "." not in num_accumulated
-
-            if is_digits or is_minus or is_dot:
-                valid.update(tid)
-
-        for term in [",", "}", " ", "\n"]:
-            if term in token_to_id:
-                valid.add(token_of(term))
-                
-        return valid
-
-    elif state == State.PARAM_VALUE:
-        blocked = {"{", "}", "[", "]", "\n"}
-        # return {tid for text, tid in token_to_id.items() if text not in blocked}
-        valid = set()
-        for text, ids in token_to_id.items():
-            if text not in blocked:
-                valid.update(ids)
-        return valid
-    elif state == State.COMMA_OR_ARGS_CLOSE:
-        if param_keys:
-            return {token_of(",")}
-        else:
-            return {token_of("}")}
-
-    elif state == State.ARGS_CLOSE:
-        return {token_of("}")}
-
-    elif state == State.END:
-        return {token_of("}")}
-
-    return set()
-
-
-def generate_token(
-    input_ids: list[int],
-    state: State,
-    param_keys: list[str],
-    param_types: dict[str, str],
-    current_param: str,
-    num_accumulated: str,
-) -> int:
-
-    tensor = torch.tensor([input_ids])
-    logits = my_model.get_logits_from_input_ids(tensor)
-
-    if len(logits.shape) == 3:
-        logits = logits[0, -1, :]
-    elif len(logits.shape) == 2:
-        logits = logits[-1, :]
-
-    logits = logits.float().numpy()
-
-    valid_tokens = get_valid_tokens(
-        state, param_keys, param_types, current_param, num_accumulated
-    )
-    
-    if not valid_tokens:
-        print(f"No hay tokens válidos para el estado {state}. Usando fallback.")
-        valid_tokens = set(range(len(logits)))
-        
-    for token_id in range(len(logits)):
-        if token_id not in valid_tokens:
-            logits[token_id] = -np.inf
-
-    return int(np.argmax(logits))
-
-
-def update_state(
-    state: State,
-    token: int,
-    param_keys: list[str],
-    num_accumulated: str,
-    current_param: str,
-    fn_params: dict[str, str],
-) -> State:
-    token_text = id_to_token.get(token, "")
-
-    if state == State.START:
-        return State.FN_NAME_KEY
-    
-    elif state == State.FN_NAME_KEY:
-        return State.FN_NAME_COLON
-    
-    elif state == State.FN_NAME_COLON:
-        return State.FN_NAME_VALUE
-    
-    elif state == State.FN_NAME_VALUE:
-        return State.COMMA_AFTER_FN
-    
-    elif state == State.COMMA_AFTER_FN:
-        return State.ARGS_KEY
-    
-    elif state == State.ARGS_KEY:
-        return State.ARGS_COLON
-    
-    elif state == State.ARGS_COLON:
-        return State.ARGS_OPEN
-    
-    elif state == State.ARGS_OPEN:
-        return State.PARAM_KEY
-    
-    elif state == State.PARAM_KEY:
-        return State.PARAM_COLON
-    
-    elif state == State.PARAM_COLON:                      
-        param_type = fn_params.get(current_param, "string")
-        if param_type in ("number", "integer", "float"):
-            return State.PARAM_VALUE_NUM
-        
-        return State.PARAM_VALUE
-    
-    elif state == State.PARAM_VALUE_NUM:
-        if token_text in [",", "}", " ", "\n"]:
-            return State.COMMA_OR_ARGS_CLOSE
-        
-        return State.PARAM_VALUE_NUM
-    
-    elif state == State.PARAM_VALUE:
-        if token_text in ["\n", '","']:
-            return State.COMMA_OR_ARGS_CLOSE
-        
-        return State.PARAM_VALUE
-    
-    elif state == State.COMMA_OR_ARGS_CLOSE:
-        if token_text == ",":
-            return State.PARAM_KEY
-        
-        return State.END
-    
-    elif state == State.ARGS_CLOSE:
-        return State.END
-
-    return State.END
 
 
 def generate_json(
     prompt: str,
+    functions: list[FunctionDefinition],
+) -> dict[str, Any]:
+
+    input_ids = my_model.encode(
+        prompt
+    ).flatten().tolist()
+
+    generated: list[int] = []
+    max_tokens = 100
+
+    for _ in range(max_tokens):
+        logits = np.array(
+            my_model.get_logits_from_input_ids(input_ids + generated),
+            dtype=np.float32
+        )
+        next_id = int(np.argmax(logits))
+        token_str = id_to_token.get(next_id, "")
+
+        if next_id == my_model._tokenizer.eos_token_id:
+            break
+
+        generated.append(next_id)
+        full_text = my_model.decode(generated)
+
+        if "\n\n" in full_text and len(full_text) > 5:
+            break
+
+    full_output = my_model.decode(generated).strip()
+    print(f"  Model output: {full_output[:120]}...")
+
+    fn_name = _find_function_name(full_output, functions)
+    fn_def = next((fn for fn in functions if fn.name == fn_name), functions[0])
+    fn_params = {k: v.type for k, v in fn_def.parameters.items()}
+    param_order = list(fn_def.parameters.keys())
+
+    json_obj = _extract_json(full_output)
+    if json_obj is not None:
+        args = json_obj.get("args", {})
+    else:
+        args = _extract_args_from_call(full_output, fn_name, param_order, fn_params)
+        if not args:
+            args = _extract_args_natural(full_output, fn_params)
+
+    return {
+        "fn_name": fn_name,
+        "args": args
+    }
+
+
+def _find_function_name(
+    text: str, functions: list[FunctionDefinition]
+) -> str:
+    text_lower = text.lower()
+
+    fn_call = re.search(r"\b(fn_\w+)\s*\(", text_lower)
+    if fn_call:
+        name = fn_call.group(1)
+        if any(fn.name == name for fn in functions):
+            return name
+
+    positions = []
+    for fn in functions:
+        idx = text_lower.find(fn.name.lower())
+        if idx != -1:
+            positions.append((idx, fn.name))
+
+    if positions:
+        positions.sort()
+        return positions[0][1]
+
+    for fn in functions:
+        desc_keywords = [w for w in fn.description.lower().split() if len(w) > 3][:3]
+        if desc_keywords and all(kw in text_lower for kw in desc_keywords):
+            return fn.name
+
+    return functions[0].name
+
+
+def _extract_args_from_call(
+    text: str,
     fn_name: str,
+    param_order: list[str],
     fn_params: dict[str, str],
 ) -> dict[str, Any]:
 
-    prompt_ids = my_model.encode(prompt)
-    generated: list[int] = []                  
+    pattern = re.escape(fn_name) + r"\s*\(\s*(.*?)\s*\)"
+    match = re.search(pattern, text)
+    if not match:
+        return {}
 
-    state = State.START
-    param_keys_remaining = list(fn_params.keys())
-    curr_param = ""
-    num_accumulated = ""
-    extracted_args: dict[str, Any] = {}        
+    args_str = match.group(1)
+    if not args_str:
+        return {}
 
-    print("Generating JSON:")
+    raw_args = _split_call_args(args_str)
+    args: dict[str, Any] = {}
 
-    while state != State.END:
+    for i, raw in enumerate(raw_args):
+        if i >= len(param_order):
+            break
 
-        current_ids = prompt_ids + generated
+        raw = raw.strip()
+        kw_match = re.match(r'(\w+)\s*=\s*(.+)', raw)
+        if kw_match:
+            pname = kw_match.group(1)
+            val = _parse_arg_value(kw_match.group(2), fn_params.get(pname, "string"))
+            if pname in fn_params:
+                args[pname] = val
+        else:
+            pname = param_order[i]
+            args[pname] = _parse_arg_value(raw, fn_params.get(pname, "string"))
 
-        next_token = generate_token(
-            current_ids, state, param_keys_remaining,
-            fn_params, curr_param, num_accumulated
-        )
+    return args
 
-        token_text = id_to_token.get(next_token, "")
 
-        if state == State.PARAM_KEY:
-            curr_param = token_text.strip('"')
+def _split_call_args(args_str: str) -> list[str]:
+    args = []
+    depth = 0
+    current = []
 
-        elif state == State.PARAM_VALUE_NUM:
-            if token_text in [",", "}", " ", "\n"]:
+    for ch in args_str:
+        if ch in ("(", "[", "{"):
+            depth += 1
+            current.append(ch)
+        elif ch in (")", "]", "}"):
+            depth -= 1
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            args.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+
+    if current:
+        args.append("".join(current).strip())
+
+    return args
+
+
+def _parse_arg_value(raw: str, param_type: str) -> Any:
+    raw = raw.strip().strip("\"'")
+
+    if param_type in ("number", "integer", "float"):
+        try:
+            val = float(raw)
+            return int(val) if val == int(val) else val
+        except ValueError:
+            pass
+
+    return raw
+
+
+def _extract_json(text: str) -> dict[str, Any] | None:
+    brace_depth = 0
+    start = -1
+
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if brace_depth == 0:
+                start = i
+            brace_depth += 1
+        elif ch == "}":
+            brace_depth -= 1
+            if brace_depth == 0 and start != -1:
+                candidate = text[start:i + 1]
                 try:
-                    extracted_args[curr_param] = float(num_accumulated)
-                except ValueError:
-                    extracted_args[curr_param] = 0.0
-                num_accumulated = ""
-                if curr_param in param_keys_remaining:
-                    param_keys_remaining.remove(curr_param)
-                state = update_state(
-                    state, next_token, param_keys_remaining,
-                    num_accumulated, curr_param, fn_params
-                )
-                print(token_text, end="")
-                continue
-            else:
-                num_accumulated += token_text
+                    parsed = json.loads(candidate)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except json.JSONDecodeError:
+                    continue
 
-        generated.append(next_token)
-        print(token_text, end="")
+    return None
 
-        state = update_state(
-            state, next_token, param_keys_remaining,
-            num_accumulated, curr_param, fn_params
-        )
 
-    print()
-    return {
-        "fn_name": fn_name,
-        "args": extracted_args
-    }
+def _extract_args_natural(
+    text: str, fn_params: dict[str, str]
+) -> dict[str, Any]:
+    args: dict[str, Any] = {}
+
+    for pname, ptype in fn_params.items():
+        patterns = [
+            re.escape(pname) + r'["\s]*[:=]\s*"?([^"\s,}]+)"?',
+        ]
+
+        found = False
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                val: Any = match.group(1).strip()
+                if ptype in ("number", "integer", "float"):
+                    try:
+                        val = float(val)
+                        if val == int(val):
+                            val = int(val)
+                    except ValueError:
+                        continue
+                else:
+                    val = val.strip("\"'")
+                args[pname] = val
+                found = True
+                break
+
+        if not found and ptype in ("number", "integer", "float"):
+            nums = re.findall(r"-?\d+\.?\d*", text)
+            if nums:
+                val = float(nums[0])
+                if val == int(val):
+                    val = int(val)
+                args[pname] = val
+
+    return args
