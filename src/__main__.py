@@ -131,7 +131,8 @@ def main() -> int:
         definitions_path = args.input.parent / "functions_definition.json"
         tests_path = args.input
     
-    # --- Cargar entrada
+    # 
+    # Cargar entrada
     print("Cargando archivos de entrada...")
     try:
         functions = load_function_def(definitions_path)
