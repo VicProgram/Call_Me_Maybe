@@ -96,18 +96,18 @@ def json_exporter(results: list[FunctionCall], output_path: Path) -> None:
     print(f"Resultado guardado en: {output_path}")
 
 
-def valid_json(json_path: Path) -> bool:
-    try:
-        with open(json_path, 'r', encoding="utf-8") as f:
-            json.load(f)
-            return True
+# def valid_json(json_path: Path) -> bool:
+#     try:
+#         with open(json_path, 'r', encoding="utf-8") as f:
+#             json.load(f)
+#             return True
 
-    except json.JSONDecodeError as e:
-        print("Invalid JSON: Syntax Error")
-        print(f"Detail: {e.msg}")
-        return False
+#     except json.JSONDecodeError as e:
+#         print("Invalid JSON: Syntax Error")
+#         print(f"Detail: {e.msg}")
+#         return False
 
-    except FileNotFoundError:
-        print("File doesn't exists.")
-        return False
+#     except FileNotFoundError:
+#         print("File doesn't exists.")
+#         return False
 
