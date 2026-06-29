@@ -1,13 +1,20 @@
+from typing import Any
 from llm_sdk import Small_LLM_Model
 from src.models import FunctionDefinition, FunctionCall
-from src.constrained_decoder import generate_json, FUNCTION_NAMES
-from src.prompt_builder import build_function_selection_prompt
+from src.vocab import VocabIndex
+from src.constrained_decoder import JSONGenerator
+from src.prompt_builder import (
+    build_function_selection_prompt,
+    build_argument_extraction_prompt
+)
 
 
 class FunctionCaller:
 
     def __init__(self, model: Small_LLM_Model) -> None:
         self.model = model
+        self.vocab = VocabIndex(model)
+        self.generator = JSONGenerator(model, self.vocab)
 
     def resolve(
         self,
@@ -15,15 +22,35 @@ class FunctionCaller:
         functions: list[FunctionDefinition],
     ) -> FunctionCall:
 
-        FUNCTION_NAMES.clear()
-        FUNCTION_NAMES.extend(fn.name for fn in functions)
-
         selection_prompt = build_function_selection_prompt(prompt, functions)
+        selection_ids = self.model.encode(selection_prompt).flatten().tolist()
 
-        result = generate_json(selection_prompt, functions)
+        fn_names = [fn.name for fn in functions]
+        chosen_name = self.generator.select_function_name(
+            selection_ids, fn_names
+        )
+
+        fn_def = next(fn for fn in functions if fn.name == chosen_name)
+
+        args: dict[str, Any] = {}
+        for param_name, param_def in fn_def.parameters.items():
+            arg_prompt = build_argument_extraction_prompt(
+                prompt, fn_def, param_name, args
+            )
+            arg_ids = self.model.encode(arg_prompt).flatten().tolist()
+
+            if param_def.type in ("number", "float"):
+                args[param_name] = self.generator.extract_number(arg_ids)
+            elif param_def.type == "integer":
+                value = self.generator.extract_number(arg_ids)
+                args[param_name] = int(value)
+            elif param_def.type == "boolean":
+                args[param_name] = self.generator.extract_boolean(arg_ids)
+            else:
+                args[param_name] = self.generator.extract_string(arg_ids)
 
         return FunctionCall(
             prompt=prompt,
-            fn_name=result["fn_name"],
-            args=result["args"],
+            fn_name=chosen_name,
+            args=args
         )

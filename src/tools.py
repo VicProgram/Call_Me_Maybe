@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 from src.models import FunctionDefinition, FunctionCall
 
+
 def json_reader(path: Path) -> Any:
 
     if not path.exists():
@@ -17,67 +18,51 @@ def json_reader(path: Path) -> Any:
         return None
 
 
-
 def load_function_def(path: Path) -> list[FunctionDefinition]:
 
     raw = json_reader(path)
 
     if not isinstance(raw, list):
-        raise ValueError("function_definitions.json must contain an array JSON")
-    
+        raise ValueError(
+            "function_definitions.json must contain an array JSON"
+        )
+
     definitions = []
 
     for i, item in enumerate(raw):
         try:
             definitions.append(FunctionDefinition(**item))
         except Exception as e:
-            raise ValueError(f"Invalid definition in {i}: {e}") from e
-        
+            raise ValueError(
+                f"Invalid definition in {i}: {e}"
+            ) from e
+
     return definitions
-
-
-
-
-# def load_prompt(path: Path) -> list[str]:
-#     raw = json_reader(path)
-
-#     if not isinstance(raw, list):
-#         raise ValueError("function_definitions.json must contain an array JSON")
-    
-#     prompts = []
-
-#     for i, item in enumerate(raw):
-#         if not isinstance(item, str):
-#             raise ValueError (
-#                 f"El prompt en índice {i} debe ser string, "
-#                 f"pero es {type(item).__name__}"
-#             )
-#         prompts.append(item)
-
-#     return prompts
 
 
 def load_prompt(path: Path) -> list[str]:
     raw = json_reader(path)
 
     if not isinstance(raw, list):
-        raise ValueError("function_definitions.json must contain an array JSON")
-    
+        raise ValueError(
+            "function_calling_tests.json must contain an array JSON"
+        )
+
     prompts = []
 
     for i, item in enumerate(raw):
-        # Si es un diccionario, extraemos el valor de la clave 'prompt'
         if isinstance(item, dict):
             texto = item.get("prompt")
             if texto is None:
-                raise ValueError(f"El diccionario en el índice {i} no tiene la clave 'prompt'")
+                raise ValueError(
+                    f"El diccionario en el índice {i} "
+                    f"no tiene la clave 'prompt'"
+                )
             prompts.append(str(texto))
-        # Si ya es un string, lo añadimos directamente
         elif isinstance(item, str):
             prompts.append(item)
-        # Si es cualquier otra cosa, lanzamos el error
         else:
-            raise ValueError (
+            raise ValueError(
                 f"El prompt en índice {i} debe ser string o dict, "
                 f"pero es {type(item).__name__}"
             )
@@ -110,4 +95,3 @@ def valid_json(json_path: Path) -> bool:
     except FileNotFoundError:
         print("File doesn't exists.")
         return False
-
