@@ -725,7 +725,632 @@ terminado hasta que ves una coma o una llave. La solucion es:
 
 ---
 
-## Capitulo 15: Referencias y Enlaces
+## Capitulo 15: Restricciones del Subject - Lo que Puedes y No Puedes Hacer
+
+### 15.1 Restricciones de lenguaje y dependencias
+
+| Regla | Detalle |
+|-------|---------|
+| Python 3.10+ | No usar caracteristicas de versiones anteriores |
+| flake8 | Todo el codigo debe pasar `flake8 .` |
+| mypy | Todo el codigo debe pasar `mypy .` con los flags del subject |
+| type hints | Todas las funciones deben tener anotaciones de tipo |
+| docstrings | Todas las funciones y clases deben tener docstrings (PEP 257) |
+| pydantic | Todas las clases de datos deben usar pydantic |
+| numpy | Permitido |
+| json | Permitido |
+| torch | **PROHIBIDO** en `src/` |
+| transformers | **PROHIBIDO** en `src/` |
+| huggingface | **PROHIBIDO** en `src/` |
+| dspy | **PROHIBIDO** |
+| outlines | **PROHIBIDO** |
+
+**Por que**: el subject quiere que aprendas a interactuar con el modelo a
+traves del SDK, no que uses las librerias directamente. El SDK es una
+abstraccion que simplifica la interaccion.
+
+### 15.2 Restricciones de uso del SDK
+
+| Regla | Detalle |
+|-------|---------|
+| `get_logits_from_input_ids` | Usar este metodo para obtener logits |
+| `get_path_to_vocab_file` | Usar este metodo para obtener el vocabulario |
+| `encode` | Usar este metodo para tokenizar texto |
+| `decode` | Opcional, para decodificar tokens |
+| Metodos privados | **PROHIBIDOS** (nada que empiece con `_`) |
+
+**Por que**: el subject prohibe explicitamente usar metodos privados del SDK.
+Esto es para que no dependas de detalles internos que podrian cambiar.
+
+### 15.3 Restricciones de eleccion de funcion
+
+| Regla | Detalle |
+|-------|---------|
+| Elegir con el LLM | La funcion debe ser elegida por el modelo |
+| No heuristicas | No usar matching de palabras clave, regex, etc. |
+| No magia medieval | No usar logica hardcodeada |
+
+**Por que**: el subject quiere que el modelo decida que funcion llamar. Tu
+trabajo es darle las opciones y dejar que elija, no elegir por el.
+
+### 15.4 Restricciones de formato de salida
+
+| Regla | Detalle |
+|-------|---------|
+| Claves exactas | `prompt`, `fn_name`, `args` |
+| Sin claves extra | No anadir nada mas |
+| Sin texto libre | Solo JSON valido |
+| Tipos correctos | `number`, `string`, `boolean`, `integer` |
+| Todos los argumentos | No olvidar ningun parametro requerido |
+
+### 15.5 Restricciones de manejo de errores
+
+| Regla | Detalle |
+|-------|---------|
+| Nunca petar | El programa no debe fallar con excepciones no manejadas |
+| Mensajes claros | Errores descriptivos para el usuario |
+| try-except | Usar bloques try-except para errores esperados |
+| Context managers | Usar `with` para archivos |
+
+### 15.6 Restricciones de Makefile
+
+| Target | Obligatorio | Comando |
+|--------|-------------|---------|
+| `install` | Si | `uv sync` |
+| `run` | Si | `uv run python -m src` |
+| `debug` | Si | `uv run python -m pdb -m src` |
+| `clean` | Si | Limpiar caches |
+| `lint` | Si | `flake8 . && mpy .` con flags |
+| `lint-strict` | No | `flake8 . && mpy . --strict` |
+
+### 15.7 Restricciones de README
+
+| Seccion | Obligatoria |
+|---------|-------------|
+| Primera linea en cursiva | Si |
+| Descripcion | Si |
+| Instrucciones | Si |
+| Recursos | Si |
+| Uso de IA | Si |
+| Explicacion del algoritmo | Si |
+| Decisiones de diseno | Si |
+| Analisis de rendimiento | Si |
+| Retos encontrados | Si |
+| Estrategia de pruebas | Si |
+| Ejemplos de uso | Si |
+
+### 15.8 Restricciones de entrega
+
+| Regla | Detalle |
+|-------|---------|
+| `src/` | Debe estar en el repo |
+| `pyproject.toml` y `uv.lock` | Deben estar en el repo |
+| `llm_sdk/` | Debe estar en el repo (copiado del proporcionado) |
+| `data/input/` | Debe estar en el repo (archivos de prueba) |
+| `README.md` | Debe estar en el repo |
+| `output/` | **NO** incluir en el repo (se genera en evaluacion) |
+
+---
+
+## Capitulo 16: La Interfaz de Linea de Comandos (CLI)
+
+### 16.1 Como se ejecuta el programa
+
+El subject define exactamente como se debe ejecutar:
+
+```bash
+uv run python -m src [--input <input_file>] [--output <output_file>]
+```
+
+**Que significa cada parte**:
+
+- `uv run`: ejecuta en el entorno virtual del proyecto
+- `python -m src`: ejecuta el modulo `src` como script principal
+- `--input`: ruta al archivo o directorio de entrada
+- `--output`: ruta al archivo de salida
+
+### 16.2 Comportamiento por defecto
+
+Si no se especifican argumentos:
+
+- **Entrada**: `data/input/` (directorio)
+- **Salida**: `data/output/function_calling_results.json`
+
+### 16.3 Comportamiento con argumentos
+
+```bash
+# Especificar un archivo de entrada personalizado
+uv run python -m src --input data/input/mis_tests.json
+
+# Especificar un archivo de salida personalizado
+uv run python -m src --output data/output/mis_resultados.json
+
+# Ambos
+uv run python -m src --input data/input/mis_tests.json --output data/output/mis_resultados.json
+```
+
+### 16.4 Que pasa si --input es un archivo o directorio
+
+- Si es un **directorio**: busca `functions_definition.json` y
+  `function_calling_tests.json` dentro de el.
+- Si es un **archivo**: lo usa como archivo de tests, y busca
+  `functions_definition.json` en el mismo directorio.
+
+### 16.5 Ejemplo de implementacion de argparse
+
+```python
+import argparse
+from pathlib import Path
+
+
+def parse_args() -> argparse.Namespace:
+    """Parsea los argumentos de linea de comandos.
+
+    Returns:
+        Namespace con los argumentos parseados.
+    """
+    parser = argparse.ArgumentParser(
+        description="Call Me Maybe - LLM Function Calling"
+    )
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=Path("data/input"),
+        help="Ruta al directorio o archivo de entrada",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("data/output/function_calling_results.json"),
+        help="Ruta al archivo de salida",
+    )
+    return parser.parse_args()
+```
+
+---
+
+## Capitulo 17: El SDK del LLM - API Completa
+
+### 17.1 Clase Small_LLM_Model
+
+El SDK proporciona una clase `Small_LLM_Model` que envuelve el modelo. Estos
+son los metodos que puedes usar:
+
+#### `encode(text: str) -> List[int]`
+
+Convierte texto en una lista de IDs de tokens.
+
+```python
+ids = model.encode("Hola mundo")
+print(ids)  # [1234, 5678]
+```
+
+**Por que lo necesitas**: para convertir el prompt en numeros que el modelo
+puede procesar.
+
+#### `decode(token_ids: List[int]) -> str` (opcional)
+
+Convierte una lista de IDs de tokens de vuelta a texto.
+
+```python
+text = model.decode([1234, 5678])
+print(text)  # "Hola mundo"
+```
+
+**Por que lo necesitas**: para depurar y ver que tokens se estan generando.
+
+#### `get_logits_from_input_ids(input_ids: List[int]) -> List[float]`
+
+Dada una secuencia de IDs de tokens, devuelve los logits para el siguiente
+token.
+
+```python
+logits = model.get_logits_from_input_ids([1234, 5678])
+print(len(logits))  # 151643 (tamano del vocabulario)
+print(logits[0])     # 0.1 (logit del token 0)
+```
+
+**Por que lo necesitas**: es el metodo principal para la decodificacion
+restringida. Te da las puntuaciones que necesitas para saber que token
+quiere generar el modelo.
+
+#### `get_path_to_vocab_file() -> str`
+
+Devuelve la ruta al archivo `vocab.json` del modelo.
+
+```python
+path = model.get_path_to_vocab_file()
+print(path)  # "/home/user/.cache/huggingface/hub/.../vocab.json"
+```
+
+**Por que lo necesitas**: para cargar el vocabulario y poder mapear entre
+IDs y texto.
+
+### 17.2 Flujo completo de uso del SDK
+
+```python
+from llm_sdk import Small_LLM_Model
+
+# 1. Cargar el modelo
+model = Small_LLM_Model()
+
+# 2. Codificar el prompt
+prompt = "What is the sum of 2 and 3?"
+input_ids = model.encode(prompt)
+
+# 3. Obtener logits
+logits = model.get_logits_from_input_ids(input_ids)
+
+# 4. Elegir el token con mayor logit
+best_token_id = max(range(len(logits)), key=lambda i: logits[i])
+
+# 5. Anadir el token al contexto
+input_ids.append(best_token_id)
+
+# 6. Decodificar para ver que se genero
+generated = model.decode([best_token_id])
+print(generated)  # " The" (o lo que sea)
+```
+
+### 17.3 Errores comunes con el SDK
+
+| Error | Causa | Solucion |
+|-------|-------|----------|
+| `prompt_ids + generated` | `encode()` devuelve Tensor | Usa `.flatten().tolist()` |
+| `model.get_logits_from_input_ids(tensor)` | El metodo espera una lista | Pasa una lista, no un Tensor |
+| Usar `model._model` | Es privado | Usa los metodos publicos |
+| Usar `model._tokenizer` | Es privado | Usa `encode()` y `decode()` |
+
+---
+
+## Capitulo 18: Rendimiento y Optimizacion
+
+### 18.1 Requisitos de rendimiento del subject
+
+| Metrica | Requisito |
+|--------|-----------|
+| Precision | > 95% |
+| JSON valido | 100% |
+| Tiempo | < 5 minutos para todos los prompts |
+
+### 18.2 Donde se va el tiempo
+
+1. **Carga del modelo**: ~10-30 segundos (solo una vez)
+2. **Carga del vocabulario**: ~1 segundo
+3. **Generacion de tokens**: ~0.1-0.5 segundos por token
+4. **Total para 11 prompts**: ~1-2 minutos
+
+### 18.3 Optimizaciones posibles
+
+#### Cargar el vocabulario una sola vez
+
+```python
+# Mal: carga el vocabulario en cada prompt
+for prompt in prompts:
+    vocab = Vocabulary(model.get_path_to_vocab_file())  # Lento
+
+# Bien: carga el vocabulario una vez
+vocab = Vocabulary(model.get_path_to_vocab_file())
+for prompt in prompts:
+    # usa vocab
+```
+
+#### Usar numpy para el enmascaramiento
+
+```python
+# Mal: bucle en Python
+for i in range(len(logits)):
+    if i not in legal:
+        logits[i] = -np.inf
+
+# Bien: vectorizado con numpy
+masked = np.full(len(logits), -np.inf)
+masked[legal] = logits[legal]
+```
+
+#### Precalcular el texto de todos los tokens
+
+```python
+# Mal: calcular token_text en cada paso
+for tid in range(len(vocab)):
+    text = vocab.token_text(tid)  # Lento
+
+# Bien: precalcular una vez
+id_to_text = [vocab.token_text(i) for i in range(len(vocab))]
+```
+
+### 18.4 Como medir el tiempo
+
+```python
+import time
+
+start = time.time()
+# ... ejecutar el programa ...
+end = time.time()
+print(f"Tiempo total: {end - start:.2f} segundos")
+```
+
+---
+
+## Capitulo 19: Casos de Uso y Ejemplos
+
+### 19.1 Ejemplo basico
+
+**Entrada** (`data/input/function_calling_tests.json`):
+```json
+["What is the sum of 2 and 3?"]
+```
+
+**Entrada** (`data/input/functions_definition.json`):
+```json
+[
+  {
+    "name": "fn_add_numbers",
+    "description": "Add two numbers together",
+    "parameters": {
+      "a": {"type": "number"},
+      "b": {"type": "number"}
+    },
+    "returns": {"type": "number"}
+  }
+]
+```
+
+**Ejecucion**:
+```bash
+uv run python -m src
+```
+
+**Salida** (`data/output/function_calling_results.json`):
+```json
+[
+  {
+    "prompt": "What is the sum of 2 and 3?",
+    "fn_name": "fn_add_numbers",
+    "args": {"a": 2.0, "b": 3.0}
+  }
+]
+```
+
+### 19.2 Ejemplo con multiples funciones
+
+**Entrada**:
+```json
+[
+  "Greet shrek",
+  "Reverse the string 'hello'",
+  "What is the square root of 16?"
+]
+```
+
+**Salida**:
+```json
+[
+  {
+    "prompt": "Greet shrek",
+    "fn_name": "fn_greet",
+    "args": {"name": "shrek"}
+  },
+  {
+    "prompt": "Reverse the string 'hello'",
+    "fn_name": "fn_reverse_string",
+    "args": {"s": "hello"}
+  },
+  {
+    "prompt": "What is the square root of 16?",
+    "fn_name": "fn_get_square_root",
+    "args": {"a": 16.0}
+  }
+]
+```
+
+### 19.3 Ejemplo con strings complejos
+
+**Entrada**:
+```json
+["Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS"]
+```
+
+**Salida**:
+```json
+[
+  {
+    "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS",
+    "fn_name": "fn_substitute_string_with_regex",
+    "args": {
+      "source_string": "Hello 34 I'm 233 years old",
+      "regex": "\\d+",
+      "replacement": "NUMBERS"
+    }
+  }
+]
+```
+
+### 19.4 Casos limite a probar
+
+| Caso | Entrada | Comportamiento esperado |
+|------|---------|------------------------|
+| String vacia | `""` | El programa no debe fallar |
+| Numero muy grande | `"What is the sum of 999999999 and 1?"` | Debe funcionar |
+| Caracteres especiales | `"Greet O'Brien"` | Debe manejar el apostrofo |
+| Prompt ambiguo | `"What is the result?"` | El modelo elige una funcion |
+| JSON invalido en entrada | Archivo con sintaxis incorrecta | Mensaje de error claro |
+| Archivo inexistente | `data/input/no_existe.json` | Mensaje de error claro |
+
+---
+
+## Capitulo 20: Estrategia de Pruebas con la Moulinette
+
+### 20.1 Que es la moulinette
+
+La moulinette es el programa de correccion. Tiene dos modos:
+
+1. **`prepare_exercises`**: genera los archivos de entrada (tests y
+   correcciones) para un conjunto de funciones (publicas o privadas).
+2. **`grade_student_answers`**: compara tu salida con la esperada.
+
+### 20.2 Como preparar los ejercicios
+
+```bash
+cd moulinette
+
+# Generar ejercicios publicos
+uv run python -m moulinette prepare_exercises --set public
+
+# Generar ejercicios privados
+uv run python -m moulinette prepare_exercises --set private
+```
+
+Esto crea:
+- `data/input/functions_definition.json`
+- `data/input/function_calling_tests.json`
+- `data/correction/function_calling_corrections.json`
+
+### 20.3 Como corregir
+
+```bash
+# Primero ejecuta tu programa
+cd ..
+uv run python -m src
+
+# Luego corrige
+cd moulinette
+uv run python -m moulinette grade_student_answers ../data/output/function_calling_results.json
+```
+
+### 20.4 Que verifica la moulinette
+
+| Check | Detalle |
+|-------|---------|
+| Prompt | Que el prompt coincide con el esperado |
+| fn_name | Que el nombre de la funcion es correcto |
+| Argumentos | Que los argumentos son correctos (nombre y tipo) |
+| Resultado | Que llamar la funcion con esos argumentos da el resultado esperado |
+
+### 20.5 Interpretar los resultados
+
+```
+Test 1/11
+Prompt: What is the sum of 2 and 3?
+>>> VALID <<<
+```
+
+- **VALID**: tu respuesta es correcta.
+- **INVALID: prompt mismatch**: el prompt no coincide.
+- **INVALID: unknown function**: elegiste una funcion que no existe.
+- **INVALID: invalid parameters**: los argumentos no son validos.
+- **INVALID: wrong output**: la funcion con esos argumentos no da el
+  resultado esperado.
+
+---
+
+## Capitulo 21: Errores Especificos de este Proyecto
+
+### 21.1 El problema de los nombres como prefijos
+
+Si tienes dos funciones: `fn_add` y `fn_add_numbers`, cuando la maquina esta
+en fase NAME y ha generado `fn_add`, no sabe si el nombre completo es
+`fn_add` o `fn_add_numbers`.
+
+**Solucion**: asumir que ningun nombre es prefijo de otro (como hace el
+repo de referencia). Si lo son, habria que esperar la comilla de cierre para
+desambiguar.
+
+### 21.2 El problema de los numeros negativos
+
+Un numero negativo empieza con `-`. Pero `-` también podria ser parte de un
+token que no es un numero. La maquina debe saber que en fase VALUE_NUMBER,
+el `-` solo es valido al principio.
+
+### 21.3 El problema de los strings con comillas
+
+Si un valor string contiene `"`, debe escaparse como `\"`. La maquina debe
+rastrear si el caracter anterior era `\` para saber si una `"` cierra la
+string o es parte del contenido.
+
+### 21.4 El problema de los strings con caracteres no imprimibles
+
+Si un token contiene caracteres no imprimibles (como tabulaciones o saltos
+de linea), la maquina debe decidir si son validos en una string JSON. En
+general, JSON no permite caracteres de control sin escapar, pero para este
+proyecto puedes aceptar cualquier caracter imprimible.
+
+### 21.5 El problema del token vacio
+
+Algunos tokens pueden decodificar a un string vacio (por ejemplo, tokens
+especiales). La maquina debe rechazar estos tokens en `accepts()`.
+
+---
+
+## Capitulo 22: Preguntas Frecuentes
+
+### P: Puedo usar torch en src/?
+
+**R**: No. El subject lo prohibe. Usa solo `llm_sdk`.
+
+### P: Puedo usar numpy?
+
+**R**: Si. El subject lo permite explicitamente.
+
+### P: Tengo que usar Qwen3-0.6B?
+
+**R**: Si, por defecto. Puedes usar otros modelos si funciona con
+Qwen3-0.6B.
+
+### P: Como elige el modelo que funcion llamar?
+
+**R**: El modelo genera logits para todos los tokens. Tu codigo filtra
+solo los tokens que corresponden a nombres de funcion validos. El token
+con mayor logit entre esos es el elegido.
+
+### P: Que pasa si el modelo quiere generar una funcion que no existe?
+
+**R**: No puede. La maquina de estados solo permite caracteres que
+continuan un nombre de funcion valido. Si el modelo "quiere" generar
+`fn_unknown`, la maquina no le dejara.
+
+### P: Como se que mi JSON es 100% valido?
+
+**R**: Por construccion. La maquina de estados solo permite caracteres
+que mantienen el JSON valido. Si el JSON final es invalido, hay un bug
+en la maquina.
+
+### P: Puedo hacer que el programa sea mas rapido?
+
+**R**: Si. Las optimizaciones principales son:
+- Cargar el vocabulario una sola vez.
+- Usar numpy para el enmascaramiento.
+- Precalcular el texto de todos los tokens.
+
+### P: Que hago si la moulinette dice que mi salida es invalida?
+
+**R**: Revisa:
+1. Que el prompt coincide exactamente.
+2. Que el nombre de la funcion es correcto.
+3. Que los argumentos tienen los tipos correctos (number vs string).
+4. Que no hay claves extra en el JSON.
+
+---
+
+## Capitulo 23: Resumen del Orden de Trabajo (Actualizado)
+
+1. **Entender el subject**: lee el PDF y anota los requisitos.
+2. **Preparar entorno**: `uv sync`.
+3. **Estudiar conceptos**: tokenizacion, logits, decodificacion restringida.
+4. **Implementar `models.py`**: validacion con pydantic.
+5. **Implementar `vocabulary.py`**: mapeo token <-> texto.
+6. **Implementar `constraints.py`**: la maquina de estados.
+7. **Implementar `decoder.py`**: el bucle de decodificacion.
+8. **Implementar `pipeline.py`**: union de todo.
+9. **Implementar `io_utils.py` y `__main__.py`**: entrada/salida y CLI.
+10. **Makefile**: todos los targets obligatorios.
+11. **Tests**: pytest para constraints y decoder.
+12. **README.md**: todas las secciones obligatorias.
+13. **Validar**: lint, tests, ejecucion real, moulinette.
+
+---
+
+## Capitulo 24: Referencias y Enlaces
 
 ### Documentacion oficial
 
