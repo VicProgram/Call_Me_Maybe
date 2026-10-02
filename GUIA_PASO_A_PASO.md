@@ -1,1387 +1,538 @@
-# Guia Completa: Call Me Maybe
+# Call Me Maybe - Guia de Aprendizaje Completa
 
-## Introduccion
+## Como usar esta guia
 
-Esta guia te lleva desde cero hasta completar el proyecto Call Me Maybe. No
-asume conocimientos previos de LLMs ni de decodificacion restringida. Cada
-seccion explica el por que, el como, y te da ejemplos y enlaces para profundizar.
+Esta guia esta escrita como un libro de texto. Cada capitulo explica primero
+el concepto, luego el por que existe, despues el como se hace, y finalmente
+muestra un ejemplo de codigo. Puedes leerla de principio a fin o saltar al
+capitulo que necesites.
 
 ---
 
-## Parte I: Fundamentos
+## Capitulo 1: Entendiendo el Problema
 
-### 1. Que es un LLM y como genera texto
+### 1.1 Que es un LLM y como piensa
 
-Un LLM (Large Language Model) es una red neuronal entrenada para predecir la
-siguiente palabra (token) en una secuencia. Funciona asi:
+Un LLM (Large Language Model) es un programa que ha leido mucho texto y ha
+aprendido a predecir que palabra sigue despues de otra. Cuando le escribes
+"Hola, como", el modelo piensa que lo mas probable es que siga "estas?".
 
-1. Recibe un texto (prompt).
-2. Lo convierte en numeros (tokens).
-3. Procesa esos numeros a traves de muchas capas.
-4. Devuelve una puntuacion (logit) para cada token posible del vocabulario.
-5. El token con mayor puntuacion se elige como siguiente.
-6. Se repite el proceso con el nuevo token anadido.
+Pero el modelo no trabaja con palabras. Trabaja con **tokens**, que son
+numeros enteros. Cada numero representa un trozo de texto. El modelo recibe
+una lista de numeros y devuelve una lista de puntuaciones (llamadas **logits**)
+que indican que tan probable es que cada token del vocabulario sea el siguiente.
 
-**Enlace**: https://huggingface.co/docs/transformers/en/tokenizer_summary
+**Por que importa**: para controlar lo que genera el modelo, necesitas
+entender que decide en cada paso y como influir en esa decision.
 
-**Ejemplo simplificado**:
+### 1.2 El problema de generar JSON
+
+JSON es un formato estricto. Requiere comillas, comas, llaves y tipos de datos
+especificos. Un modelo pequeno (como Qwen3-0.6B, con solo 600 millones de
+parametros) no es muy bueno siguiendo estas reglas. Si le pides que genere
+JSON, a menudo:
+
+- Se olvida de cerrar una comilla
+- Anade texto extra antes o despues del JSON
+- Inventa claves que no existen
+- Mezcla tipos de datos (pone un string donde deberia ir un numero)
+
+**El dato clave del subject**: un modelo pequeno genera JSON valido solo el
+30% de las veces. Pero con la tecnica correcta, podemos llegar al 100%.
+
+### 1.3 La solucion: Decodificacion Restringida
+
+La idea es simple pero poderosa: en lugar de dejar al modelo elegir
+libremente, le damos un menu de opciones validas en cada paso.
+
+**Analogia**: imagina que estas llenando un formulario. En cada campo, solo
+puedes escribir lo que el campo acepta. Si es un campo de fecha, solo puedes
+escribir numeros y barras. Si es un campo de texto, puedes escribir cualquier
+letra. El formulario te guia para que no te equivocas.
+
+En decodificacion restringida, el "formulario" es una maquina de estados que
+sabe que parte del JSON se esta generando en cada momento y que caracteres
+son validos en ese punto.
+
+**Por que funciona**: el modelo sigue decidiendo que generar (que funcion
+llamar, que valores poner), pero solo entre opciones que mantienen el JSON
+valido. Es como un copiloto que te dice "por aqui no" cuando te equivocas de
+camino.
+
+---
+
+## Capitulo 2: Tokenizacion - El Puente entre Texto y Numeros
+
+### 2.1 Por que los modelos no usan palabras
+
+Las palabras son ambiguas y numerosas. Un modelo tendria que conocer millones
+de palabras en multiples idiomas. En su lugar, los modelos usan **tokens**,
+que son trozos mas pequenos de texto.
+
+Un token puede ser:
+
+- Una palabra completa: "casa"
+- Una parte de palabra: "casa" + "s" = "casas"
+- Un solo caracter: "a"
+- Un espacio: " " (los espacios son importantes en JSON)
+
+### 2.2 BPE (Byte-Pair Encoding)
+
+El algoritmo mas comun para crear tokens es BPE. Funciona asi:
+
+1. Empieza con caracteres individuales.
+2. Busca las parejas de caracteres que mas juntas aparecen en el texto.
+3. Fusiona esas parejas en un nuevo token.
+4. Repite hasta tener el numero deseado de tokens.
+
+**Ejemplo practico**:
+
+```
+Texto de entrenamiento: "casa casas casar"
+Paso 1: ["c", "a", "s", "a", " ", "c", "a", "s", "a", "s", ...]
+Paso 2: "ca" aparece mucho -> crear token "ca"
+Paso 3: "cas" aparece mucho -> crear token "cas"
+Paso 4: "casa" aparece mucho -> crear token "casa"
+Resultado: "casa" es un solo token, "casas" es "casa" + "s"
+```
+
+### 2.3 El truco de los bytes a unicode
+
+Aquí viene un detalle tecnico importante. El archivo `vocab.json` del modelo
+no guarda los tokens como texto normal. Usa un mapeo de bytes a caracteres
+unicode. Esto se hace porque no todos los bytes son caracteres validos en JSON.
+
+**Por que**: un byte puede tener cualquier valor de 0 a 255. Pero muchos de
+ esos valores no son caracteres imprimibles. Para guardarlos en un archivo
+ JSON, se mapean a caracteres unicode que si son imprimibles.
+
+**El mapeo**:
+
+```
+Byte 32 (espacio) -> Caracter "Ġ"
+Byte 10 (salto de linea) -> Caracter "Ċ"
+Byte 65 (A) -> Caracter "A" (se queda igual)
+```
+
+**Como revertirlo**: para saber que texto real produce un token, necesitas
+reconstruir el mapeo inverso y decodificar los bytes.
+
+### 2.4 Por que necesitamos saber esto
+
+En decodificacion restringida, el modelo trabaja con IDs de tokens. Pero
+nosotros queremos razonar sobre caracteres (por ejemplo, "el siguiente
+caracter debe ser una comilla"). Necesitamos una forma de convertir entre IDs
+y texto real.
+
+**Solucion**: una clase `Vocabulary` que cargue el `vocab.json` y nos de el
+texto real de cualquier token.
+
+---
+
+## Capitulo 3: Logits - La Voz del Modelo
+
+### 3.1 Que son los logits
+
+Cuando el modelo procesa una secuencia de tokens, produce un array de
+numeros. Cada numero es un **logit** (puntuacion) para un token del
+vocabulario. El token con mayor logit es el que el modelo "quiere" generar.
+
+**Ejemplo**:
 
 ```
 Prompt: "The cat"
-Logits: [0.1, 0.05, 0.7, 0.1, 0.05]  # para ["sat", "ran", "slept", "ate", "jumped"]
-Elegido: "slept"  # mayor logit
-Nuevo prompt: "The cat slept"
+Logits: [0.1, 0.05, 0.7, 0.1, 0.05]
+Tokens: ["sat", "ran", "slept", "ate", "jumped"]
 ```
 
-### 2. Tokenizacion y BPE
+En este ejemplo, el modelo prefiere "slept" (logit 0.7) sobre las otras
+opciones.
 
-Los modelos no trabajan con palabras, trabajan con **tokens**. Un token puede
-ser una palabra, una parte de una palabra, o un solo caracter. El algoritmo mas
-comun es BPE (Byte-Pair Encoding).
+### 3.2 Como usar los logits
 
-**Enlace**: https://huggingface.co/docs/transformers/en/tokenizer_summary
+Normalmente, se elige el token con mayor logit (esto se llama **greedy
+decoding**). Pero en decodificacion restringida, hacemos algo diferente:
 
-**Ejemplo**:
+1. Recibimos los logits del modelo.
+2. Identificamos que tokens son validos segun nuestra maquina de estados.
+3. Ponemos a `-infinito` los logits de los tokens invalidos.
+4. Elegimos el token con mayor logit entre los validos.
 
-```python
-# Tokenizacion de "fn_add_numbers"
-tokens = tokenizer.encode("fn_add_numbers")
-# Podria ser: ["fn", "_add", "_numbers"]  # 3 tokens
-# O: ["f", "n", "_", "a", "d", "d", ...]  # muchos tokens
-```
+**Por que `-infinito`**: asi el token invalido nunca sera elegido, porque
+siempre habra un valido con mayor puntuacion.
 
-**Por que importa**: en decodificacion restringida, necesitas saber que
-caracteres produce cada token para saber si es valido o no.
+### 3.3 Softmax (opcional)
 
-### 3. El vocabulario y su formato
-
-El archivo `vocab.json` del modelo mapea tokens (strings) a IDs (enteros).
-Pero hay un detalle: los tokens estan codificados con un mapeo de bytes a
-unicode (GPT-2 style). Un espacio se guarda como `Ġ`, un salto de linea como
-`Ċ`.
-
-**Enlace**: https://github.com/openai/gpt-2/blob/master/src/encoder.py
-
-**Ejemplo**:
-
-```python
-# vocab.json (simplificado)
-{
-  "Ġthe": 1234,    # " the"
-  "Ġcat": 5678,    # " cat"
-  "Ġsat": 9012,    # " sat"
-  "fn": 3456,
-  "_": 7890,
-  "add": 1111
-}
-```
-
-Para decodificar un token a su texto real, necesitas reconstruir el mapeo
-inverso de bytes.
-
-### 4. Logits y softmax
-
-Los logits son numeros reales (positivos y negativos). Para convertirlos en
-probabilidades se usa softmax:
+Los logits se pueden convertir en probabilidades usando la funcion softmax:
 
 ```
-softmax(logits)[i] = exp(logits[i]) / sum(exp(logits[j]) for all j)
+probabilidad[i] = exp(logit[i]) / suma(exp(logit[j]) para todo j)
 ```
 
-En decodificacion restringida no necesitas softmax: solo necesitas saber que
-token tiene el mayor logit. Pones a `-infinito` los logits de los tokens
-invalidos y eliges el mayor de los restantes.
-
-**Enlace**: https://en.wikipedia.org/wiki/Softmax_function
+En decodificacion restringida no necesitas softmax, porque solo te importa
+que token tiene el mayor logit. Pero es bueno saber que existe.
 
 ---
 
-## Parte II: El Problema
+## Capitulo 4: La Maquina de Estados - El Corazon del Proyecto
 
-### 5. Que es function calling
+### 4.1 Que es una maquina de estados
 
-Function calling es la capacidad de un LLM de convertir lenguaje natural en
-una llamada a funcion estructurada. En lugar de responder "La suma de 2 y 3
-es 5", el modelo responde:
+Una maquina de estados es un modelo que tiene:
+
+- **Estados**: situaciones en las que puede estar.
+- **Transiciones**: reglas para pasar de un estado a otro.
+- **Entradas**: lo que hace que cambie de estado.
+
+**Analogia**: un semaforo. Tiene tres estados (rojo, amarillo, verde). Solo
+puede pasar de rojo a verde, de verde a amarillo, y de amarillo a rojo. No
+puede pasar de rojo a amarillo directamente.
+
+### 4.2 Por que una maquina de estados para JSON
+
+El JSON que generamos tiene una estructura fija:
 
 ```json
-{"name": "fn_add_numbers", "parameters": {"a": 2, "b": 3}}
+{"name": "<FUNCION>", "parameters": {"<CLAVE>": <VALOR>, ...}}
 ```
 
-Esto permite que el sistema ejecute la funcion real y obtenga el resultado.
+Solo hay dos partes libres: el nombre de la funcion y los valores de los
+parametros. Todo lo demas son caracteres fijos (llaves, comillas, comas,
+dos puntos).
 
-### 6. El problema de los modelos pequenos
+Una maquina de estados puede recorrer esta estructura y, en cada momento,
+saber que caracteres son validos.
 
-Un modelo de 0.6B parametros, si se le pide que genere JSON, produce salida
-valida solo ~30% de las veces. Puede:
+### 4.3 Los estados de nuestra maquina
 
-- Anadir texto extra ("Claro! Aqui tienes el JSON:")
-- Romper la sintaxis (comas faltantes, comillas sin cerrar)
-- Inventar claves que no existen
-- Usar tipos incorrectos
+| Estado | Que hace | Caracteres validos |
+|--------|----------|-------------------|
+| PREFIX | Emite el inicio del JSON | `{`, `"`, `n`, `a`, `m`, `e`, `"`, `:`, ` `, `"` |
+| NAME | Emite el nombre de la funcion | Letras que continuan un nombre valido |
+| AFTER_NAME | Emite el puente hacia los parametros | `"`, `,`, ` `, `"`, `p`, `a`, `r`, `a`, `m`, `e`, `t`, `e`, `r`, `s`, `"`, `:`, ` `, `{` |
+| PARAM_KEY | Emite la clave de un parametro | `"`, `a`, `"`, `:`, ` ` |
+| VALUE_NUMBER | Emite un numero | Digitos, `-`, `.`, `,`, `}` |
+| VALUE_STRING | Emite una string | Caracteres imprimibles, `"` |
+| VALUE_BOOLEAN | Emite true o false | `t`, `r`, `u`, `e`, `f`, `a`, `l`, `s`, `e`, `,`, `}` |
+| SEPARATOR | Emite la coma entre parametros | `,`, ` ` |
+| SUFFIX | Emite el cierre del JSON | `}`, `}` |
+| DONE | Ya termino | (nada) |
 
-### 7. La solucion: Decodificacion Restringida
+### 4.4 Como funciona en la practica
 
-En lugar de pedir al modelo que genere JSON y esperar que salga bien, se
-interviene en el proceso de generacion:
+Supongamos que queremos generar:
 
-1. El modelo genera logits para todos los tokens.
-2. Se identifican los tokens que rompen la estructura JSON.
-3. Se ponen sus logits a `-infinito`.
-4. Se elige el token con mayor logit entre los validos.
-5. Se repite hasta completar el JSON.
-
-**Resultado**: JSON valido al 100% por construccion.
-
-**Enlace**: https://lilianweng.github.io/posts/2023-01-27-decoding/
-
----
-
-## Parte III: Arquitectura del Proyecto
-
-### 8. Diagrama del flujo
-
-```
-User Prompt
-    |
-    v
-[Prompt Builder] --> "Available functions: ... User request: ..."
-    |
-    v
-[Encoder] --> [1234, 5678, ...]  (token IDs)
-    |
-    v
-[LLM] --> logits [0.1, 0.7, 0.05, ...]  (uno por token del vocabulario)
-    |
-    v
-[Constraint Machine] --> "Ahora solo puedes generar digitos"
-    |
-    v
-[Masker] --> pone -inf a los tokens invalidos
-    |
-    v
-[Selector] --> elige el token con mayor logit valido
-    |
-    v
-[Decoder] --> convierte el token a texto
-    |
-    v
-Repetir hasta completar el JSON
-    |
-    v
-[Parser] --> json.loads() --> {"name": "fn_add", "parameters": {...}}
+```json
+{"name": "fn_add", "parameters": {"a": 1, "b": 2}}
 ```
 
-### 9. Separacion de responsabilidades
+La maquina avanza asi:
 
-| Modulo | Responsabilidad | No hace |
-|--------|-----------------|---------|
-| `models.py` | Validar datos con pydantic | No habla con el modelo |
-| `vocabulary.py` | Mapear token ID <-> texto | No decide que es valido |
-| `constraints.py` | Saber que caracteres son validos | No habla con el modelo |
-| `decoder.py` | Bucle de generacion | No sabe que significa cada token |
-| `pipeline.py` | Unir todo | No implementa la logica |
-| `__main__.py` | CLI y orquestacion | No implementa la logica |
+1. **PREFIX**: emite `{"name": "` caracter por caracter.
+2. **NAME**: el modelo elige `fn_add` (entre las funciones disponibles).
+3. **AFTER_NAME**: emite `", "parameters": {`.
+4. **PARAM_KEY**: emite `"a": `.
+5. **VALUE_NUMBER**: el modelo elige `1`.
+6. **SEPARATOR**: emite `, `.
+7. **PARAM_KEY**: emite `"b": `.
+8. **VALUE_NUMBER**: el modelo elige `2`.
+9. **SUFFIX**: emite `}}`.
+10. **DONE**: terminado.
 
-**Por que**: cada modulo se puede testear por separado. Puedes probar la
-maquina de estados sin cargar el modelo. Puedes probar el decoder con un
-modelo falso.
+En cada paso, la maquina dice "solo estos caracteres son validos". El modelo
+elige entre ellos.
 
----
+### 4.5 El metodo accepts()
 
-## Parte IV: Implementacion Paso a Paso
+Este metodo es crucial. Permite preguntar: "si te doy este token completo,
+lo aceptarias?".
 
-### Paso 1: Entorno
+**Por que es necesario**: los tokens pueden tener multiples caracteres. Un
+token podria ser `"a": ` (4 caracteres). Necesitamos saber si esos 4
+caracteres son validos en secuencia.
 
-```bash
-# Instalar uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
+**Como funciona**:
 
-# Sincronizar dependencias
-uv sync
-
-# Verificar
-uv run python -c "import numpy, pydantic; print('ok')"
-```
-
-**Enlace**: https://docs.astral.sh/uv/
-
-### Paso 2: Estructura de directorios
-
-```
-src/
-  __init__.py
-  __main__.py
-  cli.py
-  models.py
-  io_utils.py
-  vocabulary.py
-  constraints.py
-  decoder.py
-  pipeline.py
-tests/
-  __init__.py
-  conftest.py
-  test_models.py
-  test_vocabulary.py
-  test_constraints.py
-  test_decoder.py
-  test_pipeline.py
-```
-
-### Paso 3: models.py
-
-```python
-"""Modelos pydantic para validacion de datos."""
-
-from pydantic import BaseModel, Field
-from typing import Any
-
-
-class ParameterDefinition(BaseModel):
-    """Define un parametro de una funcion."""
-
-    type: str  # "number", "string", "boolean", "integer"
-
-
-class FunctionDefinition(BaseModel):
-    """Define una funcion que el sistema puede llamar."""
-
-    name: str
-    description: str
-    parameters: dict[str, ParameterDefinition] = Field(default_factory=dict)
-    returns: dict[str, Any]
-
-
-class FunctionCall(BaseModel):
-    """Representa el resultado de una llamada a funcion."""
-
-    prompt: str
-    fn_name: str
-    args: dict[str, Any]
-```
-
-**Conceptos clave**:
-
-- `BaseModel`: clase base de pydantic. Valida los datos al crear la instancia.
-- `Field(default_factory=dict)`: crea un diccionario vacio por defecto.
-- `dict[str, ParameterDefinition]`: el diccionario debe tener claves string
-  y valores que sean validos como ParameterDefinition.
-
-**Ejemplo de uso**:
-
-```python
-fn = FunctionDefinition(
-    name="fn_add_numbers",
-    description="Add two numbers",
-    parameters={
-        "a": ParameterDefinition(type="number"),
-        "b": ParameterDefinition(type="number"),
-    },
-    returns={"type": "number"},
-)
-print(fn.name)  # "fn_add_numbers"
-print(fn.parameters["a"].type)  # "number"
-```
-
-### Paso 4: vocabulary.py
-
-```python
-"""Mapeo entre token IDs y su texto real."""
-
-import json
-from functools import lru_cache
-from pathlib import Path
-
-
-@lru_cache(maxsize=1)
-def _byte_to_char() -> dict[int, str]:
-    """Reconstruye el mapeo byte -> unicode de GPT-2.
-
-    Los tokenizadores BPE guardan los bytes como caracteres unicode
-    para que sean imprimibles. Esta funcion reconstruye ese mapeo.
-    """
-    printable = (
-        list(range(ord("!"), ord("~") + 1))
-        + list(range(0xA1, 0xAD))
-        + list(range(0xAE, 0x100))
-    )
-    byte_to_uni = {b: chr(b) for b in printable}
-    next_code = 0
-    for b in range(256):
-        if b not in byte_to_uni:
-            byte_to_uni[b] = chr(256 + next_code)
-            next_code += 1
-    return byte_to_uni
-
-
-class Vocabulary:
-    """Mapeo bidireccional entre token IDs y texto."""
-
-    def __init__(self, vocab_path: str | Path) -> None:
-        """Carga el vocabulario desde el archivo JSON.
-
-        Args:
-            vocab_path: Ruta al archivo vocab.json del modelo.
-        """
-        with open(vocab_path, "r", encoding="utf-8") as f:
-            raw: dict[str, int] = json.load(f)
-
-        byte_to_uni = _byte_to_char()
-        self._char_to_byte = {c: b for b, c in byte_to_uni.items()}
-        self._id_to_encoded: dict[int, str] = {
-            tid: tok for tok, tid in raw.items()
-        }
-
-    def token_text(self, token_id: int) -> str:
-        """Devuelve el texto real que produce un token.
-
-        Args:
-            token_id: ID entero del token.
-
-        Returns:
-            El texto decodificado (ej: " the", "fn_add").
-
-        Raises:
-            KeyError: Si el ID no existe en el vocabulario.
-        """
-        encoded = self._id_to_encoded[token_id]
-        data = bytes(self._char_to_byte[ch] for ch in encoded)
-        return data.decode("utf-8", errors="replace")
-
-    def __len__(self) -> int:
-        """Numero de tokens en el vocabulario."""
-        return len(self._id_to_encoded)
-```
-
-**Explicacion detallada**:
-
-1. `_byte_to_char()`: Los tokenizadores BPE no pueden usar bytes directamente
-   en JSON (no todos los bytes son caracteres validos). Por eso se mapean
-   los 256 bytes a 256 caracteres unicode imprimibles. Esta funcion
-   reconstruye ese mapeo.
-
-2. `token_text()`: Dado un token ID, busca su forma codificada en
-   `vocab.json`, la decodifica a bytes y luego a UTF-8.
+1. Guarda el estado actual.
+2. Intenta avanzar caracter por caracter.
+3. Si todos son validos, devuelve True.
+4. Si alguno no es valido, restaura el estado y devuelve False.
+5. Si todos son validos, restaura el estado (no lo compromete).
 
 **Ejemplo**:
 
 ```python
-vocab = Vocabulary("path/to/vocab.json")
-print(vocab.token_text(1234))  # " the"
-print(vocab.token_text(5678))  # "fn_add"
-print(len(vocab))  # 151643
+constraint = FunctionCallConstraint(functions)
+constraint.advance('{')
+constraint.advance('"')
+constraint.advance('n')
+# Ahora estamos en NAME
+
+# Preguntamos si "fn_add" seria valido
+if constraint.accepts("fn_add"):
+    # Si, es valido
+    pass
 ```
 
-### Paso 5: constraints.py (EL CORAZON DEL PROYECTO)
+---
 
-Este es el modulo mas importante. Implementa una maquina de estados que sabe
-que caracteres son validos en cada momento.
+## Capitulo 5: El Decoder - Uniendo Todo
 
-```python
-"""Maquina de estados para decodificacion restringida."""
+### 5.1 Que hace el decoder
 
-from enum import Enum, auto
-from .models import FunctionDefinition
+El decoder es el bucle que:
 
+1. Pide logits al modelo.
+2. Pregunta a la maquina que caracteres son validos.
+3. Filtra los tokens: solo los que la maquina acepta.
+4. Elige el token con mayor logit entre los validos.
+5. Consume ese token en la maquina.
+6. Repite hasta que la maquina este completa.
 
-class Phase(Enum):
-    """Estados de la maquina."""
+### 5.2 El algoritmo paso a paso
 
-    PREFIX = auto()        # '{"name": "'
-    NAME = auto()          # nombre de la funcion
-    AFTER_NAME = auto()    # '", "parameters": {'
-    PARAM_KEY = auto()     # '"clave": '
-    VALUE_NUMBER = auto()   # un numero
-    VALUE_STRING = auto()   # una string
-    VALUE_BOOLEAN = auto() # true/false
-    SEPARATOR = auto()     # ', ' entre parametros
-    SUFFIX = auto()        # '}}'
-    DONE = auto()          # terminado
-
-
-# Literales fijos que se emiten en cada fase
-PREFIX_TEXT = '{"name": "'
-AFTER_NAME_TEXT = '", "parameters": {'
-SEPARATOR_TEXT = ", "
-SUFFIX_TEXT = "}}"
-
-_LITERALS = {
-    Phase.PREFIX: PREFIX_TEXT,
-    Phase.AFTER_NAME: AFTER_NAME_TEXT,
-    Phase.SEPARATOR: SEPARATOR_TEXT,
-    Phase.SUFFIX: SUFFIX_TEXT,
-}
-
-DIGITS = set("0123456789")
-PRINTABLE = frozenset(chr(c) for c in range(0x20, 0x7F))
-BOOLEANS = ("true", "false")
-
-
-class FunctionCallConstraint:
-    """Maquina de estados que rastrea que caracteres son validos."""
-
-    def __init__(self, functions: list[FunctionDefinition]) -> None:
-        """Inicializa la maquina.
-
-        Args:
-            functions: Lista de funciones disponibles. Cada nombre es un
-                candidato para la fase NAME.
-        """
-        if not functions:
-            raise ValueError("No function definitions were provided.")
-        self._functions = functions
-        self._names = [fn.name for fn in functions]
-
-        self._phase = Phase.PREFIX
-        self._output = ""
-        self._chosen: FunctionDefinition | None = None
-        self._param_index = 0
-        self._prev_was_backslash = False
-        self._literal_pos = 0
-        self._name_so_far = ""
-        self._key_text = ""
-        self._number_so_far = ""
-        self._number_type = ""
-        self._string_opened = False
-        self._bool_so_far = ""
-
-    def allowed_next(self) -> set[str]:
-        """Devuelve los caracteres validos como siguiente caracter.
-
-        Returns:
-            Conjunto de strings de un caracter. Vacio si la maquina
-            esta completa.
-        """
-        if self._phase in _LITERALS:
-            literal = _LITERALS[self._phase]
-            return {literal[self._literal_pos]}
-        if self._phase is Phase.NAME:
-            return self._name_next_chars()
-        if self._phase is Phase.PARAM_KEY:
-            return {self._key_text[self._literal_pos]}
-        if self._phase is Phase.VALUE_NUMBER:
-            return self._number_next_chars()
-        if self._phase is Phase.VALUE_STRING:
-            return self._string_next_chars()
-        if self._phase is Phase.VALUE_BOOLEAN:
-            return self._boolean_next_chars()
-        return set()
-
-    def advance(self, char: str) -> None:
-        """Consume un caracter y actualiza el estado.
-
-        Args:
-            char: Un caracter previamente reportado por allowed_next().
-
-        Raises:
-            ValueError: Si el caracter no es valido en este estado.
-        """
-        if char not in self.allowed_next():
-            raise ValueError(
-                f"character {char!r} not allowed in phase {self._phase.name}"
-            )
-        if self._phase in _LITERALS:
-            self._output += char
-            self._advance_literal()
-        elif self._phase is Phase.NAME:
-            self._output += char
-            self._advance_name(char)
-        elif self._phase is Phase.PARAM_KEY:
-            self._output += char
-            self._advance_param_key()
-        elif self._phase is Phase.VALUE_NUMBER:
-            self._advance_number(char)
-        elif self._phase is Phase.VALUE_STRING:
-            self._advance_string(char)
-        elif self._phase is Phase.VALUE_BOOLEAN:
-            self._advance_boolean(char)
-
-    def accepts(self, text: str) -> bool:
-        """Verifica si un token completo podria emitirse ahora.
-
-        Simula avanzar por cada caracter del texto y luego restaura
-        el estado. Permite probar tokens multi-caracter sin
-        comprometer la maquina.
-
-        Args:
-            text: El texto del token candidato.
-
-        Returns:
-            True si todos los caracteres son validos en secuencia.
-        """
-        if text == "":
-            return False
-        # Guardar estado
-        snapshot = (
-            self._phase, self._output, self._chosen, self._param_index,
-            self._prev_was_backslash, self._literal_pos, self._name_so_far,
-            self._key_text, self._number_so_far, self._string_opened,
-            self._number_type, self._bool_so_far,
-        )
-        try:
-            for ch in text:
-                if ch not in self.allowed_next():
-                    return False
-                self.advance(ch)
-            return True
-        finally:
-            # Restaurar estado
-            (
-                self._phase, self._output, self._chosen, self._param_index,
-                self._prev_was_backslash, self._literal_pos, self._name_so_far,
-                self._key_text, self._number_so_far, self._string_opened,
-                self._number_type, self._bool_so_far,
-            ) = snapshot
-
-    def is_complete(self) -> bool:
-        """True cuando se ha generado el JSON completo."""
-        return self._phase is Phase.DONE
-
-    @property
-    def phase(self) -> Phase:
-        """Fase actual (solo lectura)."""
-        return self._phase
-
-    # --- Metodos privados ---
-
-    def _name_next_chars(self) -> set[str]:
-        """Caracteres que continuan al menos un nombre valido."""
-        pos = len(self._name_so_far)
-        chars: set[str] = set()
-        for name in self._names:
-            if name.startswith(self._name_so_far) and len(name) > pos:
-                chars.add(name[pos])
-        return chars
-
-    def _number_next_chars(self) -> set[str]:
-        """Caracteres validos para un numero."""
-        s = self._number_so_far
-        has_digit = any(c in DIGITS for c in s)
-        chars: set[str] = set(DIGITS)
-        if s == "":
-            chars.add("-")
-        if "." not in s and has_digit:
-            if s == "0" or s == "-0":
-                chars -= DIGITS  # no permitir "01", "-01"
-            if self._number_type != "integer":
-                chars.add(".")
-        if self._number_complete():
-            chars.add(self._number_terminator())
-        return chars
-
-    def _number_complete(self) -> bool:
-        """True si el numero actual es valido como JSON."""
-        s = self._number_so_far
-        body = s[1:] if s.startswith("-") else s
-        if body == "":
-            return False
-        if "." in body:
-            intpart, _, frac = body.partition(".")
-            return intpart.isdigit() and frac.isdigit() and frac != ""
-        if self._number_type == "number":
-            return False  # "number" requiere punto decimal
-        return body.isdigit()
-
-    def _number_terminator(self) -> str:
-        """Caracter que termina el numero (',' o '}')."""
-        if self._more_params():
-            return ","
-        return "}"
-
-    def _boolean_next_chars(self) -> set[str]:
-        """Caracteres validos para true/false."""
-        pos = len(self._bool_so_far)
-        chars: set[str] = set()
-        for word in BOOLEANS:
-            if word.startswith(self._bool_so_far) and len(word) > pos:
-                chars.add(word[pos])
-        if self._bool_so_far in BOOLEANS:
-            chars.add(self._number_terminator())
-        return chars
-
-    def _string_next_chars(self) -> set[str]:
-        """Caracteres validos para una string JSON."""
-        if not self._string_opened:
-            return {'"'}
-        if self._prev_was_backslash:
-            return set('"\\/bfnrt')
-        return set(PRINTABLE)
-
-    def _more_params(self) -> bool:
-        """True si quedan parametros despues del actual."""
-        return self._param_index < len(self._params()) - 1
-
-    def _params(self) -> list[tuple[str, str]]:
-        """Pares (clave, tipo) de la funcion elegida."""
-        if self._chosen is None:
-            raise ValueError("no function chosen yet")
-        return [(k, s.type) for k, s in self._chosen.parameters.items()]
-
-    def _advance_literal(self) -> None:
-        """Avanza dentro de un literal fijo."""
-        self._literal_pos += 1
-        if self._literal_pos >= len(_LITERALS[self._phase]):
-            self._on_literal_complete()
-
-    def _advance_name(self, char: str) -> None:
-        """Extiende el nombre de la funcion."""
-        self._name_so_far += char
-        if self._name_so_far in self._names:
-            self._chosen = self._function_by_name(self._name_so_far)
-            self._enter(Phase.AFTER_NAME)
-
-    def _advance_param_key(self) -> None:
-        """Avanza dentro de la clave de un parametro."""
-        self._literal_pos += 1
-        if self._literal_pos >= len(self._key_text):
-            ptype = self._params()[self._param_index][1]
-            if ptype in ("number", "integer"):
-                self._enter(Phase.VALUE_NUMBER)
-                self._number_so_far = ""
-                self._number_type = ptype
-            elif ptype == "boolean":
-                self._enter(Phase.VALUE_BOOLEAN)
-                self._bool_so_far = ""
-            else:
-                self._enter(Phase.VALUE_STRING)
-                self._string_opened = False
-                self._prev_was_backslash = False
-
-    def _advance_number(self, char: str) -> None:
-        """Construye un numero o lo termina."""
-        if char in DIGITS or char == "-" or char == ".":
-            self._number_so_far += char
-            self._output += char
-            return
-        # Es el terminador
-        self._number_so_far = ""
-        if self._more_params():
-            self._enter(Phase.SEPARATOR)
-        else:
-            self._enter(Phase.SUFFIX)
-        self.advance(char)  # re-dispatch del terminador
-
-    def _advance_boolean(self, char: str) -> None:
-        """Construye true/false o lo termina."""
-        if self._bool_so_far not in BOOLEANS or char not in (",", "}"):
-            self._bool_so_far += char
-            self._output += char
-            return
-        self._bool_so_far = ""
-        if self._more_params():
-            self._enter(Phase.SEPARATOR)
-        else:
-            self._enter(Phase.SUFFIX)
-        self.advance(char)
-
-    def _advance_string(self, char: str) -> None:
-        """Construye una string JSON, manejando escapes."""
-        self._output += char
-        if not self._string_opened:
-            self._string_opened = True
-            return
-        if self._prev_was_backslash:
-            self._prev_was_backslash = False
-            return
-        if char == "\\":
-            self._prev_was_backslash = True
-            return
-        if char == '"':
-            self._string_opened = False
-            if self._more_params():
-                self._enter(Phase.SEPARATOR)
-            else:
-                self._enter(Phase.SUFFIX)
-
-    def _on_literal_complete(self) -> None:
-        """Transicion al completar un literal fijo."""
-        if self._phase is Phase.PREFIX:
-            self._enter(Phase.NAME)
-        elif self._phase is Phase.AFTER_NAME:
-            self._start_parameters()
-        elif self._phase is Phase.SEPARATOR:
-            self._param_index += 1
-            self._enter_param_key()
-        elif self._phase is Phase.SUFFIX:
-            self._enter(Phase.DONE)
-
-    def _start_parameters(self) -> None:
-        """Entra al primer parametro o al final si no hay."""
-        if not self._params():
-            self._enter(Phase.SUFFIX)
-        else:
-            self._param_index = 0
-            self._enter_param_key()
-
-    def _enter_param_key(self) -> None:
-        """Prepara la literal para la clave del parametro actual."""
-        key = self._params()[self._param_index][0]
-        self._key_text = f'"{key}": '
-        self._phase = Phase.PARAM_KEY
-        self._literal_pos = 0
-
-    def _enter(self, phase: Phase) -> None:
-        """Cambia de fase y resetea el cursor de literal."""
-        self._phase = phase
-        self._literal_pos = 0
-
-    def _function_by_name(self, name: str) -> FunctionDefinition:
-        """Busca una funcion por su nombre exacto."""
-        for fn in self._functions:
-            if fn.name == name:
-                return fn
-        raise ValueError(f"unknown function name: {name}")
+```
+1. constraint = FunctionCallConstraint(functions)
+2. input_ids = encode(prompt)
+3. mientras no constraint.is_complete():
+4.     logits = model.get_logits_from_input_ids(input_ids)
+5.     legal_tokens = []
+6.     para cada token_id en vocabulario:
+7.         text = vocab.token_text(token_id)
+8.         si constraint.accepts(text):
+9.             legal_tokens.append(token_id)
+10.    best_token = argmax(logits[legal_tokens])
+11.    text = vocab.token_text(best_token)
+12.    para cada ch en text:
+13.        constraint.advance(ch)
+14.    input_ids.append(best_token)
+15. devolver generated_text
 ```
 
-**Explicacion de la maquina de estados**:
+### 5.3 Por que inyectar el modelo
 
-La maquina tiene 10 fases. En cada fase, solo ciertos caracteres son validos:
+En lugar de hacer `from llm_sdk import Small_LLM_Model` dentro del decoder,
+recibimos una funcion `logits_fn` como argumento.
 
-| Fase | Caracteres validos | Ejemplo |
-|------|-------------------|---------|
-| PREFIX | El siguiente caracter del literal | `{` |
-| NAME | Caracteres que continuan un nombre valido | `f`, `n`, `_` |
-| AFTER_NAME | El siguiente caracter del literal | `"` |
-| PARAM_KEY | El siguiente caracter de la clave | `"` |
-| VALUE_NUMBER | Digitos, `-`, `.`, `,`, `}` | `1`, `.` |
-| VALUE_STRING | Caracteres imprimibles, `"` | `h`, `o` |
-| VALUE_BOOLEAN | `t`, `r`, `u`, `e`, `f`, `a`, `l`, `s` | `t` |
-| SEPARATOR | `,` | `,` |
-| SUFFIX | `}` | `}` |
-| DONE | (nada) | - |
+**Ventajas**:
 
-**Ejemplo de uso**:
+- **Testeable**: puedes pasar un modelo falso que devuelva logits
+  predecibles.
+- **Flexible**: puedes cambiar el modelo sin tocar el decoder.
+- **Rapido**: los tests no necesitan cargar el modelo real (que pesa 1.5 GB).
+
+**Ejemplo**:
 
 ```python
-from src.models import FunctionDefinition, ParameterDefinition
-from src.constraints import FunctionCallConstraint
+# En produccion
+decoder = ConstrainedDecoder(
+    functions=functions,
+    vocabulary=vocab,
+    logits_fn=lambda ids: model.get_logits_from_input_ids(ids),
+    encode_fn=lambda text: model.encode(text).flatten().tolist(),
+)
 
-functions = [
-    FunctionDefinition(
-        name="fn_add",
-        description="Add two numbers",
-        parameters={
-            "a": ParameterDefinition(type="number"),
-            "b": ParameterDefinition(type="number"),
-        },
-        returns={"type": "number"},
-    ),
-]
-
-c = FunctionCallConstraint(functions)
-
-# Avanzar caracter por caracter
-for ch in '{"name": "fn_add", "parameters": {"a": 1, "b": 2}}':
-    c.advance(ch)
-
-print(c.is_complete())  # True
+# En tests
+decoder = ConstrainedDecoder(
+    functions=functions,
+    vocabulary=fake_vocab,
+    logits_fn=lambda ids: [1.0] * len(fake_vocab),  # siempre el mismo
+    encode_fn=lambda text: [0],
+)
 ```
 
-### Paso 6: decoder.py
+---
+
+## Capitulo 6: Pydantic - Validacion de Datos
+
+### 6.1 Que es pydantic
+
+Pydantic es una libreria que valida datos en Python. Defines un modelo con
+tipos, y pydantic se encarga de que los datos cumplan esos tipos.
+
+**Por que el subject lo exige**: "Todas las clases deben usar pydantic para
+validacion." Esto garantiza que los datos de entrada y salida son correctos.
+
+### 6.2 Como funciona
 
 ```python
-"""Bucle de decodificacion restringida."""
+from pydantic import BaseModel
 
-import numpy as np
-from collections.abc import Callable, Sequence
-from .constraints import FunctionCallConstraint
-from .vocabulary import Vocabulary
-from .models import FunctionDefinition
+class Persona(BaseModel):
+    nombre: str
+    edad: int
 
-LogitsFn = Callable[[list[int]], Sequence[float]]
-EncodeFn = Callable[[str], list[int]]
+# Funciona
+p = Persona(nombre="Ana", edad=25)
 
-
-class ConstrainedDecoder:
-    """Genera JSON valido restringiendo los tokens en cada paso."""
-
-    def __init__(
-        self,
-        functions: list[FunctionDefinition],
-        vocabulary: Vocabulary,
-        logits_fn: LogitsFn,
-        encode_fn: EncodeFn,
-        max_steps: int = 256,
-    ) -> None:
-        """Configura el decoder.
-
-        Args:
-            functions: Funciones disponibles.
-            vocabulary: Mapeo token <-> texto.
-            logits_fn: Funcion que dados unos IDs devuelve los logits.
-            encode_fn: Funcion que convierte texto a IDs.
-            max_steps: Limite de seguridad de tokens a generar.
-        """
-        self._functions = functions
-        self._vocab = vocabulary
-        self._logits_fn = logits_fn
-        self._encode = encode_fn
-        self._max_steps = max_steps
-        self._id_to_text = [
-            vocabulary.token_text(i) for i in range(len(vocabulary))
-        ]
-
-    def _legal_token_ids(self, constraint: FunctionCallConstraint) -> list[int]:
-        """Devuelve los IDs de tokens que la maquina acepta ahora."""
-        allowed_first = constraint.allowed_next()
-        legal: list[int] = []
-        for tid, text in enumerate(self._id_to_text):
-            if not text or text[0] not in allowed_first:
-                continue
-            if constraint.accepts(text):
-                legal.append(tid)
-        return legal
-
-    def _select(self, logits: Sequence[float], legal: list[int]) -> int:
-        """Elige el token con mayor logit entre los validos."""
-        arr = np.asarray(logits, dtype=np.float64)
-        masked = np.full(arr.shape, -np.inf, dtype=np.float64)
-        idx = np.asarray(legal, dtype=np.int64)
-        masked[idx] = arr[idx]
-        return int(np.argmax(masked))
-
-    def decode(self, prompt: str) -> str:
-        """Genera un JSON de llamada a funcion valido.
-
-        Args:
-            prompt: El texto del prompt para el modelo.
-
-        Returns:
-            Un string JSON valido.
-
-        Raises:
-            RuntimeError: Si no hay tokens validos o se excede el limite.
-        """
-        constraint = FunctionCallConstraint(self._functions)
-        input_ids = list(self._encode(prompt))
-        generated = ""
-        steps = 0
-
-        while not constraint.is_complete():
-            if steps >= self._max_steps:
-                raise RuntimeError("exceeded max decoding steps")
-            steps += 1
-
-            logits = self._logits_fn(input_ids)
-            legal = self._legal_token_ids(constraint)
-            if not legal:
-                raise RuntimeError("no legal token at this step")
-
-            best = self._select(logits, legal)
-            text = self._id_to_text[best]
-
-            for ch in text:
-                constraint.advance(ch)
-
-            generated += text
-            input_ids.append(best)
-
-        return generated
+# Falla: edad debe ser int
+p = Persona(nombre="Ana", edad="25")  # Error de validacion
 ```
 
-**Explicacion del algoritmo**:
+### 6.3 En nuestro proyecto
 
-1. `constraint.allowed_next()` dice que caracteres son validos.
-2. `_legal_token_ids()` filtra el vocabulario: solo tokens cuyo primer
-   caracter es valido Y cuyo texto completo es aceptado por la maquina.
-3. `_select()` enmascara los logits invalidos con `-infinito` y elige el
-   mayor de los validos.
-4. El token elegido se consume caracter por caracter en la maquina.
-5. Se repite hasta que la maquina esta completa.
+Usamos pydantic para:
 
-**Ejemplo de uso**:
+- **FunctionDefinition**: valida que las funciones de entrada tengan los
+  campos correctos (name, description, parameters, returns).
+- **FunctionCall**: valida que la salida tenga los campos correctos
+  (prompt, fn_name, args).
+
+**Ejemplo de validacion**:
 
 ```python
-from src.decoder import ConstrainedDecoder
-from src.vocabulary import Vocabulary
-from src.models import FunctionDefinition, ParameterDefinition
+# Esto funciona
+fn = FunctionDefinition(
+    name="fn_add",
+    description="Add two numbers",
+    parameters={"a": ParameterDefinition(type="number")},
+    returns={"type": "number"},
+)
 
-functions = [
-    FunctionDefinition(
-        name="fn_add",
-        description="Add",
-        parameters={"a": ParameterDefinition(type="number")},
-        returns={"type": "number"},
-    ),
-]
-
-vocab = Vocabulary("path/to/vocab.json")
-
-# Modelo falso que siempre devuelve los mismos logits
-def fake_logits(ids):
-    return [1.0] * len(vocab)
-
-def fake_encode(text):
-    return [0]
-
-decoder = ConstrainedDecoder(functions, vocab, fake_logits, fake_encode)
-result = decoder.decode("What is 2+2?")
-print(result)  # '{"name": "fn_add", "parameters": {"a": 0}}'
+# Esto falla: falta description
+fn = FunctionDefinition(
+    name="fn_add",
+    parameters={"a": ParameterDefinition(type="number")},
+    returns={"type": "number"},
+)  # Error: campo requerido faltante
 ```
 
-### Paso 7: pipeline.py
+---
+
+## Capitulo 7: Manejo de Errores
+
+### 7.1 Por que es importante
+
+El subject dice: "Todos los errores deben gestionarse correctamente. El
+programa nunca debe fallar de forma inesperada y siempre debe proporcionar
+mensajes de error claros."
+
+Esto significa que si el usuario:
+
+- Borra el archivo de entrada
+- Pone un JSON malformado
+- Pide algo imposible
+
+El programa debe decir "Error: el archivo X no existe" en vez de petar con un
+traceback.
+
+### 7.2 Tipos de errores que manejamos
+
+| Error | Causa | Mensaje al usuario |
+|-------|-------|-------------------|
+| FileNotFoundError | El archivo de entrada no existe | "Error: Functions file not found: data/input/functions_definition.json" |
+| ValueError (JSON) | El JSON esta malformado | "Error: Invalid JSON in functions_definition.json" |
+| ValueError (schema) | El JSON no tiene la estructura correcta | "Error: Invalid function definition at index 2" |
+| RuntimeError (decoder) | El decoder no puede generar JSON valido | "Error: No legal token at step 42" |
+
+### 7.3 Como implementarlo
 
 ```python
-"""Pipeline completo: prompt -> JSON valido."""
-
-import json
-from .constraints import FunctionCallConstraint
-from .decoder import ConstrainedDecoder
-from .vocabulary import Vocabulary
-from .models import FunctionDefinition, FunctionCall
-
-
-class Pipeline:
-    """Une todos los componentes para resolver prompts."""
-
-    def __init__(self, model, functions: list[FunctionDefinition]) -> None:
-        """Inicializa el pipeline.
-
-        Args:
-            model: Instancia de Small_LLM_Model.
-            functions: Funciones disponibles.
-        """
-        self._functions = functions
-        vocab_path = model.get_path_to_vocab_file()
-        self._vocab = Vocabulary(vocab_path)
-        self._decoder = ConstrainedDecoder(
-            functions=functions,
-            vocabulary=self._vocab,
-            logits_fn=lambda ids: model.get_logits_from_input_ids(ids),
-            encode_fn=lambda text: model.encode(text).flatten().tolist(),
-        )
-
-    def _build_prompt(self, user_prompt: str) -> str:
-        """Construye el prompt que se le pasa al modelo.
-
-        El prompt lista las funciones disponibles y la peticion del usuario.
-        Solo influye en que decision toma el modelo, no en la validez del JSON.
-        """
-        lines = ["Available functions:"]
-        for fn in self._functions:
-            lines.append(f"- {fn.name}: {fn.description}")
-        lines.append("")
-        lines.append(f"User request: {user_prompt}")
-        lines.append("")
-        lines.append("Function call:")
-        return "\n".join(lines)
-
-    def resolve(self, user_prompt: str) -> FunctionCall:
-        """Convierte un prompt en una llamada a funcion.
-
-        Args:
-            user_prompt: La peticion en lenguaje natural.
-
-        Returns:
-            Un FunctionCall con prompt, fn_name y args.
-        """
-        prompt = self._build_prompt(user_prompt)
-        json_str = self._decoder.decode(prompt)
-        data = json.loads(json_str)  # siempre valido por construccion
-        return FunctionCall(
-            prompt=user_prompt,
-            fn_name=data["name"],
-            args=data["parameters"],
-        )
-```
-
-### Paso 8: io_utils.py
-
-```python
-"""Utilidades de entrada/salida con manejo de errores."""
-
-import json
-from pathlib import Path
-from .models import FunctionDefinition, FunctionCall
-
-
-def load_functions(path: Path) -> list[FunctionDefinition]:
-    """Carga las definiciones de funciones desde un JSON.
-
-    Args:
-        path: Ruta al archivo functions_definition.json.
-
-    Returns:
-        Lista de FunctionDefinition validados.
-
-    Raises:
-        FileNotFoundError: Si el archivo no existe.
-        ValueError: Si el JSON es malformado o invalido.
-    """
-    if not path.exists():
-        raise FileNotFoundError(f"Functions file not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    if not isinstance(raw, list):
-        raise ValueError("functions_definition.json must contain a JSON array")
-    return [FunctionDefinition(**item) for item in raw]
-
-
-def load_prompts(path: Path) -> list[str]:
-    """Carga los prompts de prueba desde un JSON.
-
-    Acepta un array de strings o un array de objetos con clave "prompt".
-
-    Args:
-        path: Ruta al archivo function_calling_tests.json.
-
-    Returns:
-        Lista de strings con los prompts.
-
-    Raises:
-        FileNotFoundError: Si el archivo no existe.
-        ValueError: Si el JSON es malformado o invalido.
-    """
-    if not path.exists():
-        raise FileNotFoundError(f"Tests file not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    if not isinstance(raw, list):
-        raise ValueError("function_calling_tests.json must contain a JSON array")
-
-    prompts = []
-    for item in raw:
-        if isinstance(item, str):
-            prompts.append(item)
-        elif isinstance(item, dict) and "prompt" in item:
-            prompts.append(str(item["prompt"]))
-        else:
-            raise ValueError(f"Invalid prompt entry: {item!r}")
-    return prompts
-
-
-def save_results(results: list[FunctionCall], path: Path) -> None:
-    """Guarda los resultados en un archivo JSON.
-
-    Args:
-        results: Lista de FunctionCall a guardar.
-        path: Ruta de salida (se crean directorios si no existen).
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = [r.model_dump() for r in results]
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-```
-
-### Paso 9: __main__.py
-
-```python
-"""Punto de entrada del programa."""
-
-import argparse
-import sys
-from pathlib import Path
-from llm_sdk import Small_LLM_Model
-from .io_utils import load_functions, load_prompts, save_results
-from .pipeline import Pipeline
-
-
-def parse_args() -> argparse.Namespace:
-    """Parsea los argumentos de linea de comandos."""
-    parser = argparse.ArgumentParser(
-        description="Call Me Maybe - LLM Function Calling"
-    )
-    parser.add_argument(
-        "--input",
-        type=Path,
-        default=Path("data/input"),
-        help="Directorio de entrada (default: data/input)",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("data/output/function_calling_results.json"),
-        help="Archivo de salida (default: data/output/function_calling_results.json)",
-    )
-    return parser.parse_args()
-
-
 def main() -> int:
-    """Funcion principal."""
     args = parse_args()
 
-    # Cargar entrada
     try:
         functions = load_functions(args.input / "functions_definition.json")
         prompts = load_prompts(args.input / "function_calling_tests.json")
-    except (FileNotFoundError, ValueError) as e:
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    print(f"Loaded {len(functions)} functions and {len(prompts)} prompts")
-
-    # Cargar modelo
-    print("Loading model...")
-    model = Small_LLM_Model()
-    pipeline = Pipeline(model, functions)
-
-    # Procesar prompts
-    results = []
-    for i, prompt in enumerate(prompts, 1):
-        print(f"[{i}/{len(prompts)}] {prompt}")
-        try:
-            call = pipeline.resolve(prompt)
-            results.append(call)
-            print(f"  -> {call.fn_name}({call.args})")
-        except Exception as e:
-            print(f"  Error: {e}", file=sys.stderr)
-
-    # Guardar salida
-    save_results(results, args.output)
-    print(f"Results saved to {args.output}")
+    # ... resto del programa
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-```
-
-### Paso 10: Makefile
-
-```makefile
-install:
-	uv sync
-
-run:
-	uv run python -m src
-
-debug:
-	uv run python -m pdb -m src
-
-lint:
-	flake8 .
-	mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
-
-lint-strict:
-	flake8 .
-	mypy . --strict
-
-clean:
-	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	rm -rf .mypy_cache .pytest_cache
-	rm -rf data/output
-
-.PHONY: install run debug lint lint-strict clean
 ```
 
 ---
 
-## Parte V: Tests
+## Capitulo 8: Tests - Verificando que Todo Funciona
 
-### Paso 11: Tests de constraints
+### 8.1 Por que testear
+
+Los tests son como un examen que le haces a tu codigo. Si el test pasa, el
+codigo hace lo que esperas. Si falla, sabes que algo esta mal.
+
+**En este proyecto**: los tests son especialmente importantes porque el
+modelo es lento (tarda en cargar) y no siempre se puede probar con el modelo
+real.
+
+### 8.2 Tipos de tests
+
+1. **Tests unitarios**: prueban una pieza pequena (ej: la maquina de estados).
+2. **Tests de integracion**: prueban como trabajan varias piezas juntas.
+3. **Tests end-to-end**: prueban el programa completo con el modelo real.
+
+### 8.3 Tests de la maquina de estados (sin modelo)
+
+Estos tests son rapidos y no necesitan el modelo. Verifican que la maquina
+acepta JSON validos y rechaza JSON invalidos.
+
+**Ejemplo**:
 
 ```python
-"""Tests para la maquina de estados."""
-
-import pytest
-from src.constraints import FunctionCallConstraint, Phase
-from src.models import FunctionDefinition, ParameterDefinition
-
-
-def make_functions():
-    """Crea funciones de prueba."""
-    return [
-        FunctionDefinition(
-            name="fn_add",
-            description="Add two numbers",
-            parameters={
-                "a": ParameterDefinition(type="number"),
-                "b": ParameterDefinition(type="number"),
-            },
-            returns={"type": "number"},
-        ),
-        FunctionDefinition(
-            name="fn_greet",
-            description="Greet someone",
-            parameters={
-                "name": ParameterDefinition(type="string"),
-            },
-            returns={"type": "string"},
-        ),
-    ]
-
-
-def test_initial_phase():
-    """La maquina empieza en PREFIX."""
-    c = FunctionCallConstraint(make_functions())
-    assert c.phase is Phase.PREFIX
-
-
 def test_accepts_valid_json():
-    """Acepta un JSON de llamada valido."""
-    c = FunctionCallConstraint(make_functions())
+    c = FunctionCallConstraint(functions)
     assert c.accepts('{"name": "fn_add", "parameters": {"a": 1, "b": 2}}')
 
-
 def test_rejects_invalid_json():
-    """Rechaza un JSON invalido."""
-    c = FunctionCallConstraint(make_functions())
+    c = FunctionCallConstraint(functions)
     assert not c.accepts('{"name": "fn_add", "parameters": {"a": 1, "b": 2}}x')
-
-
-def test_rejects_unknown_function():
-    """Rechaza un nombre de funcion desconocido."""
-    c = FunctionCallConstraint(make_functions())
-    assert not c.accepts('{"name": "fn_unknown", "parameters": {}}')
-
-
-def test_full_generation():
-    """Genera un JSON completo caracter por caracter."""
-    c = FunctionCallConstraint(make_functions())
-    json_str = '{"name": "fn_add", "parameters": {"a": 1, "b": 2}}'
-    for ch in json_str:
-        c.advance(ch)
-    assert c.is_complete()
-
-
-def test_string_with_escapes():
-    """Maneja strings con caracteres escapados."""
-    c = FunctionCallConstraint(make_functions())
-    json_str = '{"name": "fn_greet", "parameters": {"name": "O\\"Brien"}}'
-    for ch in json_str:
-        c.advance(ch)
-    assert c.is_complete()
 ```
 
-### Paso 12: Tests del decoder
+### 8.4 Tests del decoder (con modelo falso)
+
+Estos tests verifican que el decoder produce JSON valido, usando un modelo
+falso que devuelve logits predecibles.
+
+**Ejemplo**:
 
 ```python
-"""Tests para el decoder con modelo falso."""
-
-import pytest
-from src.decoder import ConstrainedDecoder
-from src.vocabulary import Vocabulary
-from src.models import FunctionDefinition, ParameterDefinition
-
-
-class FakeVocabulary:
-    """Vocabulario falso para tests."""
-
-    def __init__(self):
-        self._texts = [
-            '{"', 'name": "', 'fn_add', '", "parameters": {"a": ',
-            '1', ', ', '2', '}}',
-        ]
-
-    def token_text(self, i: int) -> str:
-        return self._texts[i]
-
-    def __len__(self) -> int:
-        return len(self._texts)
-
-
-def make_functions():
-    return [
-        FunctionDefinition(
-            name="fn_add",
-            description="Add",
-            parameters={
-                "a": ParameterDefinition(type="number"),
-                "b": ParameterDefinition(type="number"),
-            },
-            returns={"type": "number"},
-        ),
-    ]
-
-
 def test_decoder_produces_valid_json():
-    """El decoder produce JSON valido."""
-    vocab = FakeVocabulary()
-    functions = make_functions()
-
-    def logits_fn(ids):
-        return [1.0] * len(vocab)
-
-    def encode_fn(text):
-        return [0]
-
-    decoder = ConstrainedDecoder(functions, vocab, logits_fn, encode_fn)
+    decoder = ConstrainedDecoder(functions, fake_vocab, fake_logits, fake_encode)
     result = decoder.decode("test")
-
     assert result.startswith('{"')
     assert result.endswith('}}')
-    assert '"fn_add"' in result
-
-
-def test_decoder_respects_constraints():
-    """El decoder nunca genera tokens invalidos."""
-    vocab = FakeVocabulary()
-    functions = make_functions()
-
-    # Logits que siempre apuntan al token 0
-    def logits_fn(ids):
-        logits = [0.0] * len(vocab)
-        logits[0] = 1.0
-        return logits
-
-    def encode_fn(text):
-        return [0]
-
-    decoder = ConstrainedDecoder(functions, vocab, logits_fn, encode_fn)
-    result = decoder.decode("test")
-
-    # Con estos logits, el decoder deberia producir algo valido
-    # (el token 0 es '{"' que siempre es valido al principio)
-    assert result.startswith('{"')
 ```
 
 ---
 
-## Parte VI: README.md
+## Capitulo 9: El README - Contando tu Historia
 
-### Paso 13: Estructura del README
+### 9.1 Por que es importante
 
-```markdown
-*Este proyecto ha sido creado como parte del curriculo de 42 por <login>.*
+El README es lo primero que ve alguien que abre tu proyecto. Debe explicar:
 
-# Call Me Maybe
+- Que hace el proyecto
+- Como instalarlo
+- Como ejecutarlo
+- Como funciona por dentro
+- Que decisiones tomaste
+- Que problemas encontraste
 
-## Descripcion
+### 9.2 Secciones obligatorias (segun el subject)
 
-Herramienta de function calling que convierte peticiones en lenguaje natural
-en llamadas a funciones estructuradas en JSON. Usa decodificacion restringida
-para garantizar JSON valido al 100% con un modelo pequeno (0.6B parametros).
+1. **Primera linea en cursiva**: `*Este proyecto ha sido creado como parte
+   del curriculo de 42 por <login>.*`
+2. **Descripcion**: que hace el proyecto.
+3. **Instrucciones**: como instalar y ejecutar.
+4. **Recursos**: enlaces a documentacion + seccion "Uso de IA".
+5. **Explicacion del algoritmo**: decodificacion restringida.
+6. **Decisiones de diseno**: por que separaste asi el codigo.
+7. **Analisis de rendimiento**: precision, velocidad, fiabilidad.
+8. **Retos encontrados**: que problemas tuviste y como los resolviste.
+9. **Estrategia de pruebas**: como validaste el proyecto.
+10. **Ejemplos de uso**: comandos de ejemplo.
 
-## Instrucciones
+### 9.3 La seccion "Uso de IA"
 
-### Requisitos
+El subject pide que expliques para que tareas usaste IA. Esto es importante
+porque quieren saber que entiendes lo que hiciste, no que copiaste y pegaste.
 
-- Python 3.10+
-- uv
+**Ejemplo de como escribirla**:
 
-### Instalacion
-
-```bash
-make install
-# o
-uv sync
 ```
-
-### Ejecucion
-
-```bash
-# Con rutas por defecto
-uv run python -m src
-
-# Con rutas personalizadas
-uv run python -m src --input data/input --output data/output/resultados.json
-```
-
-### Lint
-
-```bash
-make lint
-make lint-strict
-```
-
-## Recursos
-
-- [uv documentation](https://docs.astral.sh/uv/)
-- [HuggingFace Transformers](https://huggingface.co/docs/transformers)
-- [Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B)
-- [Tokenizer summary](https://huggingface.co/docs/transformers/en/tokenizer_summary)
-
 ### Uso de IA
 
 Se uso IA como asistente para:
@@ -1390,121 +541,128 @@ Se uso IA como asistente para:
 - Mejorar la documentacion
 
 Todas las decisiones de diseno y la implementacion fueron realizadas por mi.
-
-## Explicacion del algoritmo
-
-El programa usa **decodificacion restringida**:
-
-1. El modelo genera logits para todos los tokens posibles.
-2. Una maquina de estados determina que caracteres son validos en cada momento.
-3. Los logits de los tokens invalidos se ponen a -infinito.
-4. Se elige el token con mayor logit entre los validos.
-5. Se repite hasta completar el JSON.
-
-La maquina de estados recorre la estructura fija del JSON:
-`{"name": "<FUNCION>", "parameters": {"<CLAVE>": <VALOR>, ...}}`
-
-Solo el nombre de la funcion y los valores de los parametros son libres;
-todo lo demas son literales fijos.
-
-## Decisiones de diseno
-
-- **Separacion de responsabilidades**: cada modulo hace una cosa.
-- **Modelo inyectado**: el decoder recibe el modelo como argumento, no lo
-  importa. Permite testear con un modelo falso.
-- **Vocabulario cacheado**: el mapeo token <-> texto se calcula una vez.
-- **Pydantic en toda la frontera**: entrada y salida validadas.
-
-## Analisis de rendimiento
-
-- **Precision**: ~95%+ en seleccion de funcion y argumentos.
-- **Validez JSON**: 100% por construccion.
-- **Velocidad**: todos los prompts en menos de 5 minutos.
-
-## Retos encontrados
-
-- **BPE a nivel de bytes**: reconstruir el mapeo de bytes a unicode.
-- **Escapes en strings**: manejar `\"` dentro de valores string.
-- **Terminacion de numeros**: un numero no tiene delimitador de cierre,
-  asi que se ofrece `,` o `}` como caracteres validos cuando el numero
-  esta completo.
-
-## Estrategia de pruebas
-
-- Tests unitarios de la maquina de estados (sin modelo).
-- Tests del decoder con modelo falso.
-- Tests end-to-end con el modelo real.
-
-## Ejemplos de uso
-
-```bash
-# Ejemplo basico
-uv run python -m src
-
-# Ver salida
-cat data/output/function_calling_results.json
-```
-
-Salida esperada:
-
-```json
-[
-  {
-    "prompt": "What is the sum of 2 and 3?",
-    "fn_name": "fn_add_numbers",
-    "args": {"a": 2.0, "b": 3.0}
-  }
-]
-```
+Las sugerencias de IA fueron revisadas, adaptadas y validadas antes de usarlas.
 ```
 
 ---
 
-## Parte VII: Validacion Final
+## Capitulo 10: El Makefile - Automatizacion
 
-### Paso 14: Checklist
+### 10.1 Que es un Makefile
+
+Un Makefile es un archivo que define comandos (targets) que puedes ejecutar
+con `make <target>`. Es como tener accesos rapidos para las tareas comunes.
+
+### 10.2 Targets obligatorios
+
+| Target | Que hace | Comando tipico |
+|--------|----------|----------------|
+| `install` | Instala dependencias | `uv sync` |
+| `run` | Ejecuta el programa | `uv run python -m src` |
+| `debug` | Ejecuta con debugger | `uv run python -m pdb -m src` |
+| `lint` | Verifica estilo y tipos | `flake8 . && mpy .` |
+| `lint-strict` | Verificacion estricta | `flake8 . && mpy . --strict` |
+| `clean` | Limpia archivos temporales | `rm -rf __pycache__ .mypy_cache` |
+
+### 10.3 Por que `uv run` en vez de `python`
+
+`uv run python -m src` hace dos cosas:
+
+1. Asegura que el entorno virtual este activo.
+2. Ejecuta el comando dentro de ese entorno.
+
+Si usas solo `python`, podrias estar usando el Python del sistema, no el del
+proyecto.
+
+---
+
+## Capitulo 11: Validacion con la Moulinette
+
+### 11.1 Que es la moulinette
+
+La moulinette es el programa que corrige tu proyecto. Genera ejercicios
+(prompts y funciones) y compara tu salida con la esperada.
+
+### 11.2 Como usarla
 
 ```bash
-# 1. Lint sin errores
-make lint
-
-# 2. Tests pasan
-uv run pytest tests/ -v
-
-# 3. Ejecucion con datos de ejemplo
-uv run python -m src
-
-# 4. Salida valida
-cat data/output/function_calling_results.json | python3 -m json.tool
-
-# 5. Probar con moulinette
+# Generar ejercicios (publicos o privados)
 cd moulinette
+uv run python -m moulinette prepare_exercises --set public
+
+# Corregir tu salida
 uv run python -m moulinette grade_student_answers ../data/output/function_calling_results.json
 ```
 
-### Errores comunes
+### 11.3 Que verifica
 
-| Error | Causa | Solucion |
-|-------|-------|----------|
-| `param.type.value` | `type` es str, no Enum | Usa `param.type` |
-| `fn_def.params` | El campo es `parameters` | Usa `fn_def.parameters` |
-| `prompt_ids + generated` | `encode()` devuelve Tensor | Usa `.flatten().tolist()` |
-| JSON invalido | El decoder no restringe bien | Revisa `accepts()` y `allowed_next()` |
-| Modelo cargado al importar | Instanciar a nivel de modulo | Instanciar en `main()` |
-| `torch` importado en `src/` | El subject lo prohibe | Usa solo `llm_sdk` |
+- Que el prompt coincide con el esperado.
+- Que el nombre de la funcion es correcto.
+- que los argumentos son correctos (nombre y tipo).
+- Que el resultado de llamar la funcion es correcto.
 
 ---
 
-## Parte VIII: Conceptos Avanzados (Opcional)
+## Capitulo 12: Errores Comunes y Como Evitarlos
 
-### Por que no usar heuristica para elegir la funcion?
+### 12.1 Error: `param.type.value`
 
-El subject dice explicitamente: "La funcion a llamar debe elegirse usando el
-LLM, no con heuristicas ni ningun otro tipo de magia medieval."
+**Causa**: `ParameterDefinition.type` es un `str`, no un Enum. Los strings no
+tienen `.value`.
+
+**Solucion**: usa `param.type` directamente.
+
+### 12.2 Error: `fn_def.params`
+
+**Causa**: el campo se llama `parameters`, no `params`.
+
+**Solucion**: usa `fn_def.parameters`.
+
+### 12.3 Error: `prompt_ids + generated`
+
+**Causa**: `model.encode()` devuelve un Tensor de PyTorch, no una lista. No
+puedes sumar un Tensor con una lista.
+
+**Solucion**: convierte a lista primero:
+```python
+input_ids = model.encode(text).flatten().tolist()
+```
+
+### 12.4 Error: JSON invalido
+
+**Causa**: el decoder no restringe bien los caracteres en algun estado.
+
+**Solucion**: revisa que `allowed_next()` devuelva exactamente los caracteres
+validos en cada fase, y que `accepts()` verifique el token completo.
+
+### 12.5 Error: el modelo se carga al importar
+
+**Causa**: instanciar `Small_LLM_Model()` a nivel de modulo (fuera de una
+funcion) hace que se cargue cada vez que se importa el modulo.
+
+**Solucion**: instanciar el modelo una sola vez en `main()` y pasarlo a quien
+lo necesite.
+
+### 12.6 Error: usar torch directamente en src/
+
+**Causa**: el subject prohibe usar pytorch/transformers/huggingface
+directamente.
+
+**Solucion**: usa solo `llm_sdk`. Si necesitas manipular tensores, hazlo
+dentro de `llm_sdk`, no en tu codigo.
+
+---
+
+## Capitulo 13: Conceptos Avanzados (Opcional)
+
+### 13.1 Por que no usar heuristicas para elegir la funcion
+
+El subject dice: "La funcion a llamar debe elegirse usando el LLM, no con
+heuristicas ni ningun otro tipo de magia medieval."
 
 Esto significa que no puedes:
 
-- Buscar palabras clave en el prompt.
+- Buscar palabras clave en el prompt (ej: "suma" -> fn_add).
 - Usar expresiones regulares para detectar la intencion.
 - Hacer matching de strings.
 
@@ -1512,13 +670,13 @@ El modelo debe decidir que funcion llamar basandose en el prompt y las
 descripciones de las funciones. La decodificacion restringida garantiza que
 el nombre elegido sea uno de los validos, pero la decision es del modelo.
 
-### Por que pydantic?
+### 13.2 Por que pydantic en toda la frontera
 
 Pydantic valida los datos al crear la instancia. Si el JSON de entrada tiene
 un tipo incorrecto o falta un campo, pydantic lanza un error claro. Esto
 cumple el requisito de "Todas las clases deben usar pydantic para validacion."
 
-### Por que inyectar el modelo?
+### 13.3 Por que inyectar el modelo
 
 Si el decoder recibe el modelo como argumento (en vez de importarlo), puedes:
 
@@ -1526,32 +684,75 @@ Si el decoder recibe el modelo como argumento (en vez de importarlo), puedes:
 - Cambiar el modelo sin modificar el decoder.
 - Mantener la dependencia de `llm_sdk` confinada a `pipeline.py`.
 
+### 13.4 El truco de los literales fijos
+
+El JSON de salida tiene una estructura fija:
+
+```
+{"name": "<FUNCION>", "parameters": {"<CLAVE>": <VALOR>, ...}}
+```
+
+Todo excepto `<FUNCION>` y `<VALOR>` son literales fijos. Esto significa que
+en la mayoria de los pasos, solo hay un caracter valido. La maquina de estados
+sabe exactamente que literal emitir en cada momento.
+
+### 13.5 El problema de los numeros sin delimitador
+
+Un numero JSON no tiene un delimitador de cierre. No sabes si el numero ha
+terminado hasta que ves una coma o una llave. La solucion es:
+
+- Mientras el numero no este completo, solo aceptar digitos, `-` y `.`.
+- Cuando el numero este completo, ofrecer `,` o `}` como caracteres validos.
+- Si el modelo elige `,` o `}`, el numero ha terminado.
+
 ---
 
-## Resumen del orden de trabajo
+## Capitulo 14: Resumen del Orden de Trabajo
 
-1. Entender el subject y los conceptos basicos.
-2. Preparar entorno (`uv sync`).
-3. Implementar `models.py`.
-4. Implementar `vocabulary.py`.
-5. Implementar `constraints.py` (la maquina de estados).
-6. Implementar `decoder.py` (el bucle de decodificacion).
-7. Implementar `pipeline.py` (union de todo).
-8. Implementar `io_utils.py` y `__main__.py`.
-9. Makefile con todos los targets.
-10. Tests con pytest.
-11. README.md completo.
-12. Validar con lint, tests, ejecucion real y moulinette.
+1. **Entender el subject**: lee el PDF y anota los requisitos.
+2. **Preparar entorno**: `uv sync`.
+3. **Estudiar conceptos**: tokenizacion, logits, decodificacion restringida.
+4. **Implementar `models.py`**: validacion con pydantic.
+5. **Implementar `vocabulary.py`**: mapeo token <-> texto.
+6. **Implementar `constraints.py`**: la maquina de estados.
+7. **Implementar `decoder.py`**: el bucle de decodificacion.
+8. **Implementar `pipeline.py`**: union de todo.
+9. **Implementar `io_utils.py` y `__main__.py`**: entrada/salida y CLI.
+10. **Makefile**: todos los targets obligatorios.
+11. **Tests**: pytest para constraints y decoder.
+12. **README.md**: todas las secciones obligatorias.
+13. **Validar**: lint, tests, ejecucion real, moulinette.
 
 ---
 
-## Referencias
+## Capitulo 15: Referencias y Enlaces
 
-- Repositorio de referencia 1: https://github.com/eepylaurie/42-call_me_maybe
-- Repositorio de referencia 2: https://github.com/ayfadli/Call-Me-Maybe
-- Documentacion de uv: https://docs.astral.sh/uv/
-- Tokenizers (HuggingFace): https://huggingface.co/docs/transformers/en/tokenizer_summary
-- Qwen3-0.6B: https://huggingface.co/Qwen/Qwen3-0.6B
-- Decoding strategies: https://lilianweng.github.io/posts/2023-01-27-decoding/
-- Pydantic: https://docs.pydantic.dev/
-- GPT-2 encoder (byte BPE): https://github.com/openai/gpt-2/blob/master/src/encoder.py
+### Documentacion oficial
+
+- **uv**: https://docs.astral.sh/uv/
+- **Pydantic**: https://docs.pydantic.dev/
+- **HuggingFace Transformers**: https://huggingface.co/docs/transformers
+- **Tokenizer summary**: https://huggingface.co/docs/transformers/en/tokenizer_summary
+- **Qwen3-0.6B**: https://huggingface.co/Qwen/Qwen3-0.6B
+
+### Articulos y tutoriales
+
+- **Decoding strategies**: https://lilianweng.github.io/posts/2023-01-27-decoding/
+- **GPT-2 encoder (byte BPE)**: https://github.com/openai/gpt-2/blob/master/src/encoder.py
+- **Softmax function**: https://en.wikipedia.org/wiki/Softmax_function
+
+### Repositorios de referencia
+
+- **Referencia 1**: https://github.com/eepylaurie/42-call_me_maybe
+  (implementacion completa con tests, CI, README detallado)
+- **Referencia 2**: https://github.com/ayfadli/Call-Me-Maybe
+  (otra aproximacion, mas simple)
+
+### Conceptos clave para buscar
+
+- "Constrained decoding LLM"
+- "Byte-Pair Encoding BPE"
+- "Logits and softmax"
+- "JSON schema validation"
+- "State machine pattern Python"
+- "Pydantic BaseModel"
