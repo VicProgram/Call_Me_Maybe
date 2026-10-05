@@ -79,7 +79,7 @@ def json_exporter(func_call_obj: list[FunctionCall], func_call_path: str):
             )
 
     func_dict = []
-    
+
     for item in func_call_obj:
         new_item = item.dict()
         func_dict.append(new_item)
@@ -89,5 +89,5 @@ def json_exporter(func_call_obj: list[FunctionCall], func_call_path: str):
             json.dump(func_dict, f)
         except Exception as e:
             raise ValueError(
-                f"Error creating the output for '{item}: {e}"
+                f"Error creating the output: {e}"
                 )
