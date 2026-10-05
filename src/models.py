@@ -1,13 +1,13 @@
 from pydantic import BaseModel
 
 
+class ParameterDefinition(BaseModel):
+    type: str
+
+
 class ParameterType(BaseModel):
     NUMBER = "number"
     STRING = "string"
-
-
-class ParameterDefinition(BaseModel):
-    type: str
 
 
 class FunctionDefinition(BaseModel):
@@ -23,3 +23,5 @@ class FunctionCall(BaseModel):
     args: dict[str, object]
 
 
+class TestPrompt(BaseModel):
+    prompt: str
