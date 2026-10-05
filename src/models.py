@@ -1,5 +1,4 @@
 from pydantic import BaseModel, Field
-from typing import Any
 
 
 class ParameterType(BaseModel):
@@ -14,5 +13,13 @@ class ParameterDefinition(BaseModel):
 class FunctionDefinition(BaseModel):
     name: str
     description: str
-    parameters: dict[str, ParameterDefinition] = Field(..., default_factory=dict)
-    returns: dict[str, Any]
+    parameters: dict[str, ParameterDefinition]
+    returns: dict[str, str]
+
+
+class FunctionCall(BaseModel):
+    prompt: str
+    fn_name: str
+    args: dict[str, object]
+
+
