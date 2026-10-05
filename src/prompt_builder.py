@@ -9,7 +9,7 @@ def function_selection(
 
     for function in function_list:
         line = f"- {function.name}: {function.description}"
-        formated_function.appen(line)
+        formated_function.append(line)
 
     functions_text = "\n".join(formated_function)
 
@@ -19,6 +19,7 @@ def function_selection(
         " The available functions are: "
         f"{functions_text}\n"
         f"{user_prompt}\n"
+        "Function to call: "
                   )
 
     return main_prompt

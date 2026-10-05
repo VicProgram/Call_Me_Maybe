@@ -1059,6 +1059,147 @@ Usa `json.dump(data, f, indent=4)` para escribir JSON con sangría de 4 espacios
 
 ---
 
+# LECCIÓN 18: CREAR prompt_builder.py
+
+## Qué es prompt_builder.py?
+
+Es un módulo que construye los mensajes (prompts) que le pasamos al modelo. La forma en que le preguntamos al modelo afecta mucho a la respuesta.
+
+## Por qué es importante:
+
+El modelo es como una persona muy inteligente pero que no sabe qué quieres hacer. Si no le das instrucciones claras, no sabrá qué responder.
+
+## Función 1: function_selection (build_function_selection_prompt)
+
+### ¿Qué hace?
+Construye un texto que pregunta al modelo qué función quiere usar.
+
+### ¿Qué necesita?
+1. La pregunta del usuario (ej: "What is the sum of 2 and 3?")
+2. La lista de funciones disponibles (ej: fn_add_numbers, fn_greet, etc.)
+
+### ¿Cómo funciona paso a paso?
+
+1. **Empieza con un rol** — Dile al modelo quién es:
+   ```
+   "You are a function calling assistant."
+   ```
+
+2. **Explica qué debe hacer** — Dile al modelo qué tarea tiene:
+   ```
+   "Select the most appropriate function for the user's request."
+   ```
+
+3. **Lista las funciones disponibles** — Dile al modelo qué funciones puede usar:
+   ```
+   "Available functions:
+   - fn_add_numbers: Add two numbers together and return their sum.
+   - fn_greet: Generate a greeting message for a person by name."
+   ```
+
+4. **Incluye la pregunta del usuario** — Dile al modelo qué pregunta quiere responder:
+   ```
+   "User request: What is the sum of 2 and 3?"
+   ```
+
+5. **Termina con una indicación** — Dile al modelo qué debe generar:
+   ```
+   "Function to call: "
+   ```
+
+### El resultado final sería:
+```
+You are a function calling assistant. Select the most appropriate function for the user's request.
+
+Available functions:
+- fn_add_numbers: Add two numbers together and return their sum.
+- fn_greet: Generate a greeting message for a person by name.
+
+User request: What is the sum of 2 and 3?
+
+Function to call: 
+```
+
+### ¿Por qué termina con "Function to call: "?
+Porque el modelo "quiere" continuar con el nombre de una función. Es como si le diéramos la primera palabra de una frase y esperáramos que la complete.
+
+## Función 2: arg_extract (build_argument_extraction_prompt)
+
+### ¿Qué hace?
+Construye un texto que pregunta al modelo qué valor tiene un parámetro.
+
+### ¿Qué necesita?
+1. La pregunta del usuario (ej: "What is the sum of 2 and 3?")
+2. La función elegida (ej: fn_add_numbers)
+3. El parámetro que quieres extraer (ej: "a")
+4. Los argumentos ya extraídos (ej: {"a": 2})
+
+### ¿Cómo funciona paso a paso?
+
+1. **Explica qué función se va a usar** — Dile al modelo qué función ha elegido:
+   ```
+   "Function: fn_add_numbers - Add two numbers together and return their sum."
+   ```
+
+2. **Incluye la pregunta del usuario** — Dile al modelo qué pregunta quiere responder:
+   ```
+   "User request: What is the sum of 2 and 3?"
+   ```
+
+3. **Indica qué parámetro se está extrayendo** — Dile al modelo qué valor necesita:
+   ```
+   "Extract parameter 'a' (type: number):"
+   ```
+
+4. **Incluye los argumentos ya extraídos** — Si ya hay argumentos extraídos, inclúyelos como contexto:
+   ```
+   "Parameter 'a' (number): already extracted = 2"
+   ```
+
+5. **Termina con una indicación** — Dile al modelo qué debe generar:
+   ```
+   "Value: "
+   ```
+
+### El resultado final sería:
+```
+Function: fn_add_numbers - Add two numbers together and return their sum.
+User request: What is the sum of 2 and 3?
+
+Extract parameter 'a' (type: number):
+Value: 
+```
+
+### ¿Por qué termina con "Value: "?
+Porque el modelo "quiere" continuar con el valor del parámetro. Es como si le diéramos la primera palabra de una frase y esperáramos que la complete.
+
+## Conceptos clave:
+
+### Acceder a atributos de objetos
+Un objeto `FunctionDefinition` tiene atributos: `name`, `description`, `parameters`, `returns`. Para acceder a ellos, usas el punto:
+```python
+function.name        # El nombre de la función
+function.description # La descripción de la función
+```
+
+### f-strings
+Los f-strings son strings que pueden incluir variables:
+```python
+nombre = "fn_add_numbers"
+texto = f"- {nombre}: Add two numbers together"
+```
+
+### Unir strings con saltos de línea
+Usa `"\n".join(lista)` para unir todos los strings de una lista con saltos de línea:
+```python
+funciones_texto = "\n".join(formated_func)
+```
+
+### No es hardcodeado
+El modelo es el que decide qué función llamar, no nosotros. La decodificación restringida (que implementaremos después) es lo que garantiza que el modelo solo pueda elegir entre las funciones disponibles.
+
+---
+
 # RESUMEN DE LAS FASES
 
 1. **Fase 0**: Preparar el entorno (carpetas, pyproject.toml, Makefile, llm_sdk, datos)
