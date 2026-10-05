@@ -4,7 +4,7 @@
 	version = "0.1.0"
 	description = "A constrained decoding project for LLMs"
 
-requieres-python = ">=3.10"
+requires-python = ">=3.10"
 
 dependencies = [
 	"numpy",

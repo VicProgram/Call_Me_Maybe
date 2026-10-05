@@ -858,4 +858,578 @@ Simula un caso simple de decodificación restringida: genera un número de 2 dí
 
 ---
 
+# GUÍA DE IMPLEMENTACIÓN PASO A PASO
+
+## Cómo empezar, qué ir haciendo y cómo debería funcionar cada cosa
+
+---
+
+## FASE 0: PREPARAR EL ENTORNO
+
+### Paso 0.1: Crear la estructura de carpetas
+
+**Qué hacer:**
+Crea las carpetas que necesitas para el proyecto.
+
+**Cómo hacerlo:**
+```bash
+mkdir -p src llm_sdk data/input data/output GUIDES
+```
+
+**Por qué lo haces:**
+Necesitas una estructura organizada para que el programa pueda encontrar los archivos. La carpeta `src/` contendrá tu código, `data/input/` los archivos de entrada, `data/output/` los resultados, y `llm_sdk/` el kit de herramientas del modelo.
+
+**Cómo debería funcionar:**
+Después de ejecutar el comando, deberías ver las carpetas creadas. Puedes comprobarlo con `ls -la`.
+
+---
+
+### Paso 0.2: Crear pyproject.toml
+
+**Qué hacer:**
+Crea un archivo `pyproject.toml` en la raíz del proyecto con las dependencias necesarias.
+
+**Cómo hacerlo:**
+Crea un archivo llamado `pyproject.toml` con este contenido:
+
+```toml
+[project]
+name = "call-me-maybe"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pydantic",
+]
+
+[tool.mypy]
+strict = true
+```
+
+**Por qué lo haces:**
+Este archivo le dice a Python qué dependencias necesita el proyecto (numpy para números, pydantic para validación de datos). La sección `[tool.mypy]` activa el modo estricto de verificación de tipos.
+
+**Cómo debería funcionar:**
+Cuando ejecutes `uv sync`, Python leerá este archivo e instalará las dependencias automáticamente.
+
+---
+
+### Paso 0.3: Crear el Makefile
+
+**Qué hacer:**
+Crea un archivo `Makefile` con atajos para comandos frecuentes.
+
+**Cómo hacerlo:**
+Crea un archivo llamado `Makefile` con este contenido:
+
+```makefile
+install:
+	uv sync
+
+run:
+	uv run python -m src
+
+debug:
+	uv run python -m pdb -m src
+
+clean:
+	rm -rf __pycache__ .mypy_cache .pytest_cache
+
+lint:
+	flake8 .
+	mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+```
+
+**Por qué lo haces:**
+El Makefile te permite escribir `make run` en vez de `uv run python -m src --input data/input --output data/output/results.json`. Es más rápido y menos propenso a errores.
+
+**Cómo debería funcionar:**
+Cuando escribas `make run`, el programa debería ejecutarse. Si hay errores, el Makefile te mostrará mensajes de error claros.
+
+---
+
+### Paso 0.4: Copiar llm_sdk
+
+**Qué hacer:**
+Copia la carpeta `llm_sdk` en la raíz del proyecto.
+
+**Cómo hacerlo:**
+Si tienes el SDK en otro lugar, cópialo:
+```bash
+cp -r /ruta/al/llm_sdk .
+```
+
+**Por qué lo haces:**
+El SDK contiene la clase `Small_LLM_Model` que te permite interactuar con el modelo Qwen3-0.6B sin instalar pytorch ni transformers.
+
+**Cómo debería funcionar:**
+Después de copiarlo, deberías ver la carpeta `llm_sdk/` con un archivo `__init__.py` dentro.
+
+---
+
+### Paso 0.5: Crear los archivos de datos de entrada
+
+**Qué hacer:**
+Crea los archivos JSON con las funciones disponibles y las preguntas de prueba.
+
+**Cómo hacerlo:**
+Crea `data/input/function_definitions.json` con las funciones que el sistema puede usar. Cada función tiene un nombre, una descripción, parámetros y un tipo de retorno.
+
+Crea `data/input/function_calling_tests.json` con las preguntas que el sistema debe procesar.
+
+**Por qué lo haces:**
+Estos archivos son la entrada del programa. Sin ellos, el programa no tiene nada que procesar.
+
+**Cómo debería funcionar:**
+Cuando el programa se ejecute, leerá estos archivos y procesará cada pregunta.
+
+---
+
+## FASE 1: CREAR LOS MODELOS DE DATOS (models.py)
+
+### Paso 1.1: Entender qué son los modelos de datos
+
+**Qué es:**
+Los modelos de datos son "plantillas" que definen cómo deben ser los datos. Si un dato no encaja en la plantilla, el programa lanza un error.
+
+**Por qué los necesitas:**
+Imagina que el archivo de funciones tiene un error: un parámetro que debería ser un texto pero es un número. Sin validación, el programa fallaría más tarde de forma misteriosa. Con Pydantic, el error se detecta inmediatamente.
+
+---
+
+### Paso 1.2: Crear ParameterDefinition
+
+**Qué hacer:**
+Define la plantilla para un parámetro de función.
+
+**Cómo hacerlo:**
+En `src/models.py`, crea una clase que herede de `BaseModel` con un campo `type` de tipo `str`.
+
+**Por qué lo haces:**
+Cada parámetro de una función tiene un tipo: "number", "string", "boolean". Esta plantilla asegura que el tipo sea un texto válido.
+
+**Cómo debería funcionar:**
+Si intentas crear un parámetro con un tipo que no es un texto, Pydantic lanzará un error claro.
+
+---
+
+### Paso 1.3: Crear FunctionDefinition
+
+**Qué hacer:**
+Define la plantilla para una función completa.
+
+**Cómo hacerlo:**
+Crea una clase con campos para `name`, `description`, `parameters` y `returns`. El campo `parameters` es un diccionario donde las claves son nombres de parámetros y los valores son objetos `ParameterDefinition`.
+
+**Por qué lo haces:**
+Una función tiene un nombre, una descripción, parámetros y un tipo de retorno. Esta plantilla asegura que todos estos campos estén presentes y sean del tipo correcto.
+
+**Cómo debería funcionar:**
+Si intentas crear una función sin nombre o con parámetros inválidos, Pydantic lanzará un error.
+
+---
+
+### Paso 1.4: Crear FunctionCall
+
+**Qué hacer:**
+Define la plantilla para el resultado final.
+
+**Cómo hacerlo:**
+Crea una clase con campos para `prompt`, `fn_name` y `args`. El campo `args` es un diccionario donde las claves son nombres de parámetros y los valores son los argumentos extraídos.
+
+**Por qué lo haces:**
+El resultado final del programa es un objeto `FunctionCall` que contiene la pregunta original, el nombre de la función elegida y los argumentos extraídos.
+
+**Cómo debería funcionar:**
+Cuando el programa genera un resultado, crea un objeto `FunctionCall` con los datos correctos.
+
+---
+
+## FASE 2: CREAR EL VOCABULARIO (vocab.py)
+
+### Paso 2.1: Entender qué es el vocabulario
+
+**Qué es:**
+El vocabulario es un diccionario que asocia tokens (texto) con IDs (números). El modelo solo entiende números, así que necesitas esta traducción.
+
+**Por qué lo necesitas:**
+Cuando el modelo devuelve logits, devuelve puntuaciones para cada ID del vocabulario. Para saber qué token corresponde a cada ID, necesitas el vocabulario.
+
+---
+
+### Paso 2.2: Cargar el archivo vocab.json
+
+**Qué hacer:**
+Carga el archivo `vocab.json` del modelo y construye diccionarios de búsqueda.
+
+**Cómo hacerlo:**
+En `src/vocab.py`, crea una clase que cargue el archivo JSON y construya dos diccionarios: uno para buscar IDs a partir de tokens y otro para buscar tokens a partir de IDs.
+
+**Por qué lo haces:**
+El archivo `vocab.json` puede tener 150.000 entradas. Necesitas una forma eficiente de buscar tokens e IDs.
+
+**Cómo debería funcionar:**
+Cuando creas un objeto `VocabIndex`, carga el archivo y construye los diccionarios. Después, puedes buscar tokens e IDs rápidamente.
+
+---
+
+### Paso 2.3: Implementar métodos de búsqueda
+
+**Qué hacer:**
+Implementa métodos para buscar tokens exactos, tokens que empiezan por un prefijo y tokens compuestos por ciertos caracteres.
+
+**Cómo hacerlo:**
+Crea métodos que busquen en el diccionario y devuelvan los IDs que cumplen la condición.
+
+**Por qué lo haces:**
+En la decodificación restringida, necesitas saber qué tokens son válidos en cada paso. Por ejemplo, para extraer un número, necesitas saber qué tokens son dígitos.
+
+**Cómo debería funcionar:**
+Cuando llamas al método con un prefijo, devuelve todos los IDs de tokens que empiezan por ese prefijo.
+
+---
+
+## FASE 3: CREAR EL DECODIFICADOR RESTRINGIDO (constrained_decoder.py)
+
+### Paso 3.1: Entender qué es la decodificación restringida
+
+**Qué es:**
+La decodificación restringida es una técnica que filtra las opciones del modelo en cada paso para que solo pueda elegir tokens válidos.
+
+**Por qué la necesitas:**
+El modelo Qwen3-0.6B es pequeño y falla el 70% de las veces cuando se le pide JSON. La decodificación restringida hace que sea físicamente imposible que el modelo escriba algo incorrecto.
+
+---
+
+### Paso 3.2: Implementar get_next_token_logits
+
+**Qué hacer:**
+Implementa una función que pida al modelo las puntuaciones para el siguiente token.
+
+**Cómo hacerlo:**
+Crea una función que reciba el modelo y una lista de IDs, y devuelva los logits para el siguiente token.
+
+**Por qué lo haces:**
+El modelo devuelve puntuaciones para cada token del vocabulario. Necesitas estas puntuaciones para saber qué token es el más probable.
+
+**Cómo debería funcionar:**
+Cuando llamas a la función, devuelve una lista de 150.000 números (uno por cada token del vocabulario).
+
+---
+
+### Paso 3.3: Implementar apply_mask
+
+**Qué hacer:**
+Implementa una función que ponga -infinito a los tokens que no son válidos.
+
+**Cómo hacerlo:**
+Crea una función que reciba los logits y una lista de IDs válidos, y devuelva una nueva lista donde los tokens inválidos tienen -infinito.
+
+**Por qué lo haces:**
+El modelo elige el token con la puntuación más alta. Si pones -infinito a los tokens inválidos, el modelo no puede elegirlos nunca.
+
+**Cómo debería funcionar:**
+Cuando llamas a la función, devuelve una lista donde los tokens inválidos tienen -infinito y los válidos tienen su puntuación original.
+
+---
+
+### Paso 3.4: Implementar select_best_token
+
+**Qué hacer:**
+Implementa una función que elija el token con la puntuación más alta.
+
+**Cómo hacerlo:**
+Crea una función que reciba los logits enmascarados y devuelva el ID del token con la puntuación más alta.
+
+**Por qué lo haces:**
+Después de aplicar la máscara, necesitas saber qué token es el más probable entre los válidos.
+
+**Cómo debería funcionar:**
+Cuando llamas a la función, devuelve el ID del token con la puntuación más alta. Si todos son -infinito, devuelve None.
+
+---
+
+### Paso 3.5: Implementar la clase JSONGenerator
+
+**Qué hacer:**
+Crea una clase que coordine todo el proceso de generación con restricciones.
+
+**Cómo hacerlo:**
+Crea una clase que tenga métodos para seleccionar el nombre de una función, extraer un número, extraer un string y extraer un boolean.
+
+**Por qué lo haces:**
+Esta clase es el corazón del proyecto. Contiene toda la lógica de la decodificación restringida.
+
+**Cómo debería funcionar:**
+Cuando llamas a un método, el modelo genera texto token a token, y en cada paso solo puede elegir tokens válidos.
+
+---
+
+## FASE 4: CREAR EL CONSTRUCTOR DE PROMPTS (prompt_builder.py)
+
+### Paso 4.1: Entender qué es un prompt
+
+**Qué es:**
+Un prompt es el texto que le pasamos al modelo para guiar su respuesta.
+
+**Por qué lo necesitas:**
+La forma en que le preguntamos al modelo afecta mucho a la respuesta. Un buen prompt hace que el modelo entienda exactamente qué quieres.
+
+---
+
+### Paso 4.2: Implementar build_function_selection_prompt
+
+**Qué hacer:**
+Construye un prompt que pregunte al modelo qué función quiere usar.
+
+**Cómo hacerlo:**
+Crea una función que reciba una pregunta y una lista de funciones, y devuelva un prompt que termine con "Function to call: ".
+
+**Por qué lo haces:**
+El prompt termina con "Function to call: " para que el modelo "quiera" continuar con el nombre de una función.
+
+**Cómo debería funcionar:**
+Cuando el modelo recibe este prompt, genera el nombre de la función más apropiada.
+
+---
+
+### Paso 4.3: Implementar build_argument_extraction_prompt
+
+**Qué hacer:**
+Construye un prompt que pregunte al modelo qué valor tiene un parámetro.
+
+**Cómo hacerlo:**
+Crea una función que reciba una pregunta, una función, un parámetro y los argumentos ya extraídos, y devuelva un prompt que termine con "Value: ".
+
+**Por qué lo haces:**
+El prompt termina con "Value: " para que el modelo "quiera" continuar con el valor del parámetro.
+
+**Cómo debería funcionar:**
+Cuando el modelo recibe este prompt, genera el valor del parámetro.
+
+---
+
+## FASE 5: CREAR EL ORQUESTADOR (function_caller.py)
+
+### Paso 5.1: Entender qué es el orquestador
+
+**Qué es:**
+El orquestador es la clase que coordina todo el proceso. Es como el director de orquesta: no toca ningún instrumento, pero sabe cuándo debe entrar cada uno.
+
+**Por qué lo necesitas:**
+El proceso tiene varios pasos: elegir función, extraer argumentos, ensamblar resultado. El orquestador se encarga de que estos pasos se ejecuten en el orden correcto.
+
+---
+
+### Paso 5.2: Implementar el método resolve
+
+**Qué hacer:**
+Implementa un método que reciba una pregunta y una lista de funciones, y devuelva un objeto `FunctionCall`.
+
+**Cómo hacerlo:**
+El método debe:
+1. Construir el prompt de selección de función
+2. Elegir la función usando el decodificador
+3. Para cada parámetro de la función, construir el prompt de extracción y extraer el valor
+4. Ensamblar el resultado en un objeto `FunctionCall`
+
+**Por qué lo haces:**
+Este método es el punto de entrada del proceso. Cuando lo llamas, el sistema completo se pone en marcha.
+
+**Cómo debería funcionar:**
+Cuando llamas al método, devuelve un objeto `FunctionCall` con la pregunta original, el nombre de la función elegida y los argumentos extraídos.
+
+---
+
+## FASE 6: CREAR LAS HERRAMIENTAS DE ENTRADA/SALIDA (tools.py)
+
+### Paso 6.1: Implementar json_reader
+
+**Qué hacer:**
+Implementa una función que lea un archivo JSON y lo convierta en datos Python.
+
+**Cómo hacerlo:**
+Crea una función que reciba una ruta de archivo, verifique que exista, abra el archivo y cargue el JSON.
+
+**Por qué lo haces:**
+Necesitas leer los archivos de entrada (funciones y preguntas) para que el programa pueda procesarlos.
+
+**Cómo debería funcionar:**
+Cuando llamas a la función, devuelve los datos del archivo JSON como objetos Python.
+
+---
+
+### Paso 6.2: Implementar load_function_def
+
+**Qué hacer:**
+Implementa una función que cargue las definiciones de funciones y las valide con Pydantic.
+
+**Cómo hacerlo:**
+Crea una función que lea el JSON, verifique que sea una lista, y para cada elemento cree un objeto `FunctionDefinition`.
+
+**Por qué lo haces:**
+Necesitas validar que las funciones tengan el formato correcto antes de usarlas.
+
+**Cómo debería funcionar:**
+Cuando llamas a la función, devuelve una lista de objetos `FunctionDefinition`.
+
+---
+
+### Paso 6.3: Implementar load_prompt
+
+**Qué hacer:**
+Implementa una función que cargue los prompts de prueba.
+
+**Cómo hacerlo:**
+Crea una función que lea el JSON y devuelva una lista de strings.
+
+**Por qué lo haces:**
+Necesitas leer las preguntas de prueba para que el programa pueda procesarlas.
+
+**Cómo debería funcionar:**
+Cuando llamas a la función, devuelve una lista de strings.
+
+---
+
+### Paso 6.4: Implementar json_exporter
+
+**Qué hacer:**
+Implementa una función que escriba los resultados en un archivo JSON.
+
+**Cómo hacerlo:**
+Crea una función que reciba una lista de objetos `FunctionCall` y una ruta de archivo, cree la carpeta si no existe, y escriba el JSON.
+
+**Por qué lo haces:**
+Necesitas guardar los resultados para que el usuario pueda verlos.
+
+**Cómo debería funcionar:**
+Cuando llamas a la función, crea el archivo JSON con los resultados.
+
+---
+
+## FASE 7: CREAR EL PUNTO DE ENTRADA (__main__.py)
+
+### Paso 7.1: Implementar parse_args
+
+**Qué hacer:**
+Implementa una función que defina los argumentos que acepta el programa.
+
+**Cómo hacerlo:**
+Crea una función que use `argparse` para definir los argumentos `--input` y `--output`.
+
+**Por qué lo haces:**
+El programa necesita saber dónde están los archivos de entrada y dónde guardar los resultados.
+
+**Cómo debería funcionar:**
+Cuando ejecutas el programa con `--input` y `--output`, el programa usa esas rutas.
+
+---
+
+### Paso 7.2: Implementar main
+
+**Qué hacer:**
+Implementa la función principal que coordina todo el proceso.
+
+**Cómo hacerlo:**
+La función debe:
+1. Parsear los argumentos
+2. Cargar los archivos de entrada
+3. Cargar el modelo
+4. Crear el FunctionCaller
+5. Para cada prompt, llamar a `caller.resolve()`
+6. Escribir los resultados
+7. Mostrar un resumen
+
+**Por qué lo haces:**
+Esta función es el punto de entrada del programa. Cuando la llamas, todo el sistema se pone en marcha.
+
+**Cómo debería funcionar:**
+Cuando ejecutas el programa, procesa todas las preguntas y genera un archivo JSON con los resultados.
+
+---
+
+### Paso 7.3: Añadir el bloque if __name__ == "__main__"
+
+**Qué hacer:**
+Añade el bloque estándar de Python que ejecuta `main()` cuando el archivo se ejecuta directamente.
+
+**Cómo hacerlo:**
+Al final del archivo, añade:
+```python
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+**Por qué lo haces:**
+Este bloque es estándar en Python. Significa: "Si este archivo se ejecuta directamente (no importado), ejecuta `main()`".
+
+**Cómo debería funcionar:**
+Cuando ejecutas `python -m src`, el programa ejecuta `main()` y devuelve un código de salida (0 = éxito, 1 = error).
+
+---
+
+## FASE 8: PROBAR Y DEPURAR
+
+### Paso 8.1: Ejecutar el programa
+
+**Qué hacer:**
+Ejecuta el programa con `make run` o `uv run python -m src`.
+
+**Cómo hacerlo:**
+Escribe el comando en la terminal.
+
+**Por qué lo haces:**
+Necesitas comprobar que el programa funciona correctamente.
+
+**Cómo debería funcionar:**
+El programa debería cargar el modelo, procesar todas las preguntas y generar un archivo JSON con los resultados.
+
+---
+
+### Paso 8.2: Comprobar los resultados
+
+**Qué hacer:**
+Abre el archivo de salida y comprueba que los resultados son correctos.
+
+**Cómo hacerlo:**
+Abre `data/output/function_calling_results.json` y revisa cada resultado.
+
+**Por qué lo haces:**
+Necesitas comprobar que el programa ha elegido las funciones correctas y ha extraído los argumentos correctos.
+
+**Cómo debería funcionar:**
+Cada resultado debería tener un `prompt`, un `fn_name` y un `args` con los valores correctos.
+
+---
+
+### Paso 8.3: Depurar errores
+
+**Qué hacer:**
+Si hay errores, usa `make debug` para ejecutar el programa en modo depuración.
+
+**Cómo hacerlo:**
+Escribe `make debug` en la terminal.
+
+**Por qué lo haces:**
+El modo depuración te permite ejecutar el programa paso a paso y ver dónde está el error.
+
+**Cómo debería funcionar:**
+El programa se detendrá en el error y podrás ver los valores de las variables.
+
+---
+
+## RESUMEN DE LAS FASES
+
+1. **Fase 0**: Preparar el entorno (carpetas, pyproject.toml, Makefile, llm_sdk, datos)
+2. **Fase 1**: Crear los modelos de datos (models.py)
+3. **Fase 2**: Crear el vocabulario (vocab.py)
+4. **Fase 3**: Crear el decodificador restringido (constrained_decoder.py)
+5. **Fase 4**: Crear el constructor de prompts (prompt_builder.py)
+6. **Fase 5**: Crear el orquestador (function_caller.py)
+7. **Fase 6**: Crear las herramientas de entrada/salida (tools.py)
+8. **Fase 7**: Crear el punto de entrada (__main__.py)
+9. **Fase 8**: Probar y depurar
+
+---
+
 **Fin de la guía. ¡Mucha suerte con el proyecto!**

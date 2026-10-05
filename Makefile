@@ -52,46 +52,23 @@ lint-strict:
 	echo ""; \
 	exit $$status
 
-
 clean:
 	@echo "Cleaning temporary files...\n"
-
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete
 	find . -name "*.pyo" -delete
 	rm -rf data/output
-
-	rm -rf .mypy_cache
 	rm -f $(OUTPUT_FILE)
-
-	@echo "\nRemoving virtual environment...\n"
+	@echo "\nRemoving virtual environment and caches...\n"
 	rm -rf .mypy_cache .pytest_cache .ruff_cache
 	rm -rf $(VENV)
-
 	@echo "\nCleaning uv cache\n"
 	uv cache clear
 
+fclean: clean
+	@echo "\nCleaning vic_cache\n"
+	rm -rf ./vic_cache
 
-fclean:
-	@echo "Cleaning temporary files...\n"
+re: fclean all
 
-		find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-		find . -name "*.pyc" -delete
-		find . -name "*.pyo" -delete
-		rm -rf data/output
-
-		rm -rf .mypy_cache
-		rm -f $(OUTPUT_FILE)
-
-		@echo "\nRemoving virtual environment...\n"
-		rm -rf .mypy_cache .pytest_cache .ruff_cache
-		rm -rf $(VENV)
-
-		@echo "\nCleaning uv cache\n"
-		uv cache clear
-		@echo "\nCleaning vic_cache\n"
-		rm -rf ./vic_cache
-
-re: clean all
-
-.PHONY: all venv install run debug lint lint-strict clean re
+.PHONY: all venv install run debug lint lint-strict clean fclean re
