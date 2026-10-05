@@ -13,3 +13,5 @@ class VocabIndex:
     def token_to_id(self, token: str) -> int:
         return self.token_to_index.get(token, -1)
 
+    def id_to_token(self, index: int) -> str:
+        return self.index_to_token.get(index, "<UNK>")
