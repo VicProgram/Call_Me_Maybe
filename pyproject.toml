@@ -1,13 +1,15 @@
 [project]
-name = "call_me_maybe"
-version = "0.1.0"
-description = "A constrained decoding project for LLMs"
+
+	name = "call_me_maybe"
+	version = "0.1.0"
+	description = "A constrained decoding project for LLMs"
+
 requieres-python = ">=3.10"
+
 dependencies = [
 	"numpy",
 	"pydantic",
 	]
 
-
-	[tool.mypy]
+[tool.mypy]
 	strict = true

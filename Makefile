@@ -9,6 +9,7 @@ export HF_HUB_CACHE:=$(HF_HOME)/hub
 
 export TMPDIR=$(STORAGE)/tmp
 
+
 MYPY_FLAGS  = --warn-return-any \
               --warn-unused-ignores \
               --ignore-missing-imports \
@@ -18,13 +19,14 @@ MYPY_FLAGS  = --warn-return-any \
 FLAKE8_EXCLUDE = --exclude=data,llm_sdk,venv
 MYPY_EXCLUDE   = --exclude --exclude data --exclude llm_sdk --exclude venv
 
-all: install run
+all: 
+	install run
 
 install:
 	uv sync
 
 run:
-	PYTHONPATH=. uv run python3 -m src
+	uv run python -m src
 
 lint:
 	@echo "Comprobando linter..."
