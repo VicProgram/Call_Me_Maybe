@@ -7,8 +7,8 @@ export UV_PYTHON_INSTALL_DIR:=$(STORAGE)/python
 export HF_HOME:=$(STORAGE)/huggingface
 export HF_HUB_CACHE:=$(HF_HOME)/hub
 
-export TMPDIR=$(STORAGE)/tmp
-
+export TMPDIR:=$(STORAGE)/tmp
+VENV:=$(UV_PROJECT_ENVIRONMENT)
 
 MYPY_FLAGS  = --warn-return-any \
               --warn-unused-ignores \
@@ -17,10 +17,9 @@ MYPY_FLAGS  = --warn-return-any \
               --check-untyped-defs
 
 FLAKE8_EXCLUDE = --exclude=data,llm_sdk,venv
-MYPY_EXCLUDE   = --exclude --exclude data --exclude llm_sdk --exclude venv
+MYPY_EXCLUDE   = --exclude data --exclude llm_sdk --exclude venv
 
-all: 
-	install run
+all: install run
 
 install:
 	uv sync
@@ -67,8 +66,8 @@ clean:
 
 fclean: clean
 	@echo "\nCleaning vic_cache\n"
-	rm -rf ./vic_cache
+	rm -rf $(STORAGE)
 
 re: fclean all
 
-.PHONY: all venv install run debug lint lint-strict clean fclean re
+.PHONY: all install run lint lint-strict clean fclean re

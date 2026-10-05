@@ -987,13 +987,26 @@ Cuando el programa se ejecute, leerá estos archivos y procesará cada pregunta.
 
 ## FASE 1: CREAR LOS MODELOS DE DATOS (models.py)
 
-### Paso 1.1: Entender qué son los modelos de datos
+### Paso 1.1: Entender qué son los modelos de datos y por qué existen
 
 **Qué es:**
 Los modelos de datos son "plantillas" que definen cómo deben ser los datos. Si un dato no encaja en la plantilla, el programa lanza un error.
 
 **Por qué los necesitas:**
 Imagina que el archivo de funciones tiene un error: un parámetro que debería ser un texto pero es un número. Sin validación, el programa fallaría más tarde de forma misteriosa. Con Pydantic, el error se detecta inmediatamente.
+
+**Por qué se llaman "modelos":**
+Se llaman "modelos" porque son como un modelo o molde que define la estructura de los datos. En programación, un "modelo" es una representación abstracta de algo. En este caso, el modelo representa cómo debe ser una función, un parámetro o un resultado.
+
+**Cómo funciona BaseModel:**
+BaseModel es la clase base de Pydantic. Cuando heredas de BaseModel, estás diciendo a Python: "esta clase es un modelo de datos". BaseModel proporciona automáticamente:
+- Validación de tipos: si dices que un campo debe ser un string, BaseModel verifica que sea un string
+- Conversión de datos: si pasas un número como string, BaseModel intenta convertirlo
+- Errores claros: si algo está mal, BaseModel lanza un error que te dice exactamente qué está mal
+- Serialización: puedes convertir el modelo a JSON fácilmente
+
+**Analogía:**
+Piensa en BaseModel como un formulario de impuestos. El formulario tiene campos con reglas: "este campo debe ser un número", "este campo debe ser un texto". Si intentas escribir "hola" en el campo de número, el formulario te dice "error: este campo debe ser un número". BaseModel hace lo mismo pero en código.
 
 ---
 
@@ -1002,11 +1015,15 @@ Imagina que el archivo de funciones tiene un error: un parámetro que debería s
 **Qué hacer:**
 Define la plantilla para un parámetro de función.
 
-**Cómo hacerlo:**
-En `src/models.py`, crea una clase que herede de `BaseModel` con un campo `type` de tipo `str`.
+**Qué necesita:**
+- Un campo para el tipo del parámetro (por ejemplo, "number", "string", "boolean")
+
+**Qué debe hacer:**
+- Validar que el tipo sea un texto válido
+- Lanzar un error si el tipo no es un texto
 
 **Por qué lo haces:**
-Cada parámetro de una función tiene un tipo: "number", "string", "boolean". Esta plantilla asegura que el tipo sea un texto válido.
+Cada parámetro de una función tiene un tipo. Esta plantilla asegura que el tipo sea un texto válido.
 
 **Cómo debería funcionar:**
 Si intentas crear un parámetro con un tipo que no es un texto, Pydantic lanzará un error claro.
@@ -1018,8 +1035,16 @@ Si intentas crear un parámetro con un tipo que no es un texto, Pydantic lanzar�
 **Qué hacer:**
 Define la plantilla para una función completa.
 
-**Cómo hacerlo:**
-Crea una clase con campos para `name`, `description`, `parameters` y `returns`. El campo `parameters` es un diccionario donde las claves son nombres de parámetros y los valores son objetos `ParameterDefinition`.
+**Qué necesita:**
+- Un campo para el nombre de la función
+- Un campo para la descripción de la función
+- Un campo para los parámetros de la función (un diccionario donde las claves son nombres de parámetros y los valores son objetos ParameterDefinition)
+- Un campo para el tipo de retorno de la función
+
+**Qué debe hacer:**
+- Validar que todos los campos estén presentes y sean del tipo correcto
+- Convertir los diccionarios JSON en objetos ParameterDefinition automáticamente
+- Lanzar un error si algún campo es inválido
 
 **Por qué lo haces:**
 Una función tiene un nombre, una descripción, parámetros y un tipo de retorno. Esta plantilla asegura que todos estos campos estén presentes y sean del tipo correcto.
@@ -1034,14 +1059,20 @@ Si intentas crear una función sin nombre o con parámetros inválidos, Pydantic
 **Qué hacer:**
 Define la plantilla para el resultado final.
 
-**Cómo hacerlo:**
-Crea una clase con campos para `prompt`, `fn_name` y `args`. El campo `args` es un diccionario donde las claves son nombres de parámetros y los valores son los argumentos extraídos.
+**Qué necesita:**
+- Un campo para la pregunta original
+- Un campo para el nombre de la función elegida
+- Un campo para los argumentos extraídos (un diccionario donde las claves son nombres de parámetros y los valores son los argumentos)
+
+**Qué debe hacer:**
+- Validar que todos los campos estén presentes y sean del tipo correcto
+- Lanzar un error si algún campo es inválido
 
 **Por qué lo haces:**
-El resultado final del programa es un objeto `FunctionCall` que contiene la pregunta original, el nombre de la función elegida y los argumentos extraídos.
+El resultado final del programa es un objeto FunctionCall que contiene la pregunta original, el nombre de la función elegida y los argumentos extraídos.
 
 **Cómo debería funcionar:**
-Cuando el programa genera un resultado, crea un objeto `FunctionCall` con los datos correctos.
+Cuando el programa genera un resultado, crea un objeto FunctionCall con los datos correctos.
 
 ---
 
