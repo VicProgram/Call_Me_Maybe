@@ -31,8 +31,11 @@ class JSONGenerator:
         self.model = model
         self.vocab = vocab
 
-    def select_function_name(self):
-        ...
+    def select_function_name(self, prompt_ids: list, function_list: list):
+        for fun_name in function_list:
+            tensor_ids = self.model.encode(fun_name).flatten().tolist()
+            get_next_token_logits(tensor_ids)
+
 
     def extract_number(self):
         ...
@@ -46,6 +49,6 @@ class JSONGenerator:
 
 def load_generator() -> JSONGenerator:
     model = Small_LLM_Model()
-    vocab_path = model.get_path_to_vocab_file(Small_LLM_Model)
+    vocab_path = model.get_path_to_vocab_file()
     vocab = VocabIndex(vocab_path)
     return JSONGenerator(model, vocab)

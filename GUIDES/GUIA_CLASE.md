@@ -1497,6 +1497,325 @@ if all(c in valid_chars for c in token):  # Verifica si todos los caracteres del
 
 ---
 
+# LECCIÓN 24: CREAR constrained_decoder.py — get_next_token_logits
+
+## ¿Qué hace?
+
+Pide al modelo las puntuaciones (logits) para el siguiente token.
+
+## ¿Por qué es importante?
+
+El modelo devuelve puntuaciones para cada token del vocabulario. Necesitas estas puntuaciones para saber qué token es el más probable.
+
+## ¿Qué parámetros recibe?
+
+1. **`model`** — El modelo (objeto Small_LLM_Model)
+2. **`input_ids`** — Una lista de IDs de tokens (el contexto actual)
+
+## ¿Qué debe hacer paso a paso?
+
+1. **Llamar al SDK** — Usa `model.get_logits_from_input_ids(input_ids)` para obtener los logits
+2. **Convertir a NumPy** — Usa `np.array(logits)` para convertir la lista a un array de NumPy
+3. **Devolver el array** — Retorna el array de NumPy
+
+## ¿De dónde salen los input_ids?
+
+Los `input_ids` vienen de **convertir texto a IDs** usando el método `encode` del SDK:
+
+```python
+prompt = "What is the sum of 2 and 3?"
+input_ids = model.encode(prompt)
+# Resultado: [[892, 318, 262, 4771, 286, 16, 290, 17, 30]]
+```
+
+## Flujo completo:
+
+```
+prompt_builder.py → texto → model.encode() → input_ids → get_next_token_logits() → logits
+```
+
+## Conceptos clave:
+
+### encode vs get_logits_from_input_ids
+- `encode(text)` — Convierte texto a IDs
+- `get_logits_from_input_ids(input_ids)` — Devuelve puntuaciones para el siguiente token
+
+### Convertir a NumPy
+El SDK devuelve una lista de floats. Para trabajar con ella fácilmente, conviértela a un array de NumPy:
+```python
+logits_array = np.array(logits)
+```
+
+---
+
+# LECCIÓN 25: CREAR constrained_decoder.py — apply_mask
+
+## ¿Qué hace?
+
+Pone **-infinito** a los tokens que no son válidos. Así el modelo no puede elegirlos nunca.
+
+## ¿Por qué es importante?
+
+El modelo elige el token con la puntuación más alta. Si pones -infinito a los tokens inválidos, el modelo no puede elegirlos nunca.
+
+## Ejemplo concreto (no relacionado con el proyecto)
+
+Imagina que tienes puntuaciones para 5 tokens:
+
+```
+Token "0" → puntuación 5.2
+Token "1" → puntuación 3.1
+Token "a" → puntuación 0.5
+Token "b" → puntuación 0.1
+Token "2" → puntuación 4.0
+```
+
+Si solo quieres permitir dígitos (`0`, `1`, `2`), aplicas la máscara:
+
+```
+Token "0" → puntuación 5.2 (válido, se queda)
+Token "1" → puntuación 3.1 (válido, se queda)
+Token "a" → -infinito (inválido, bloqueado)
+Token "b" → -infinito (inválido, bloqueado)
+Token "2" → puntuación 4.0 (válido, se queda)
+```
+
+Ahora el modelo solo puede elegir entre `0`, `1`, `2`.
+
+## ¿Qué parámetros recibe?
+
+1. **`logits`** — Array de NumPy con las puntuaciones
+2. **`valid_ids`** — Lista de IDs válidos
+
+## ¿Qué debe hacer paso a paso?
+
+1. **Crear un array nuevo lleno de -infinito** — Todos los tokens empiezan bloqueados
+2. **Para cada ID válido, copiar su puntuación original** — Los tokens válidos se desbloquean
+3. **Devolver el array enmascarado**
+
+## Conceptos clave:
+
+### Crear un array lleno de -infinito
+Usa `np.full()` para crear un array lleno de un valor:
+```python
+masked = np.full(len(logits), -np.inf)
+```
+
+### Copiar puntuaciones de tokens válidos
+Itera sobre los IDs válidos y copia sus puntuaciones:
+```python
+for valid_id in valid_ids:
+    masked[valid_id] = logits[valid_id]
+```
+
+### Error común: usar el índice incorrecto
+**Incorrecto:**
+```python
+masked[valid_id] = logits[valid_ids]  # ❌ valid_ids es una lista
+```
+
+**Correcto:**
+```python
+masked[valid_id] = logits[valid_id]  # ✅ valid_id es un número
+```
+
+---
+
+# LECCIÓN 26: CREAR constrained_decoder.py — select_best_token
+
+## ¿Qué hace?
+
+Elige el token con la **puntuación más alta** del array enmascarado.
+
+## ¿Por qué es importante?
+
+Después de aplicar la máscara, los tokens inválidos tienen -infinito. El modelo debe elegir el token con la puntuación más alta entre los válidos.
+
+## Ejemplo concreto (no relacionado con el proyecto)
+
+Imagina que tienes puntuaciones para 5 tokens:
+
+```
+Token "0" → puntuación 5.2
+Token "1" → puntuación 3.1
+Token "a" → -infinito (bloqueado)
+Token "b" → -infinito (bloqueado)
+Token "2" → puntuación 4.0
+```
+
+La función debe devolver el ID del token con la puntuación más alta: `0` (puntuación 5.2).
+
+## ¿Qué parámetros recibe?
+
+1. **`masked_logits`** — Array de NumPy con las puntuaciones enmascaradas
+
+## ¿Qué debe hacer paso a paso?
+
+1. **Encontrar el token con la puntuación más alta** — Usa `np.argmax()`
+2. **Devolver su ID** — El ID del token con la puntuación más alta
+
+## Conceptos clave:
+
+### np.argmax()
+`np.argmax()` devuelve el **índice** del valor más alto en un array:
+```python
+masked_logits = np.array([5.2, 3.1, -np.inf, -np.inf, 4.0])
+best_token_id = np.argmax(masked_logits)
+# Resultado: 0 (el índice del valor 5.2)
+```
+
+---
+
+# LECCIÓN 27: CREAR constrained_decoder.py — JSONGenerator
+
+## ¿Qué es JSONGenerator?
+
+Es la clase que coordina todo el proceso de decodificación restringida. Usa las tres funciones que ya has creado (`get_next_token_logits`, `apply_mask`, `select_best_token`) para generar texto token a token, asegurándose de que solo se eligen tokens válidos.
+
+## ¿Qué métodos necesita?
+
+1. **`select_function_name`** — Elige el nombre de una función usando decodificación restringida
+2. **`extract_number`** — Extrae un número usando decodificación restringida
+3. **`extract_string`** — Extrae un string usando decodificación restringida
+4. **`extract_boolean`** — Extrae un boolean usando decodificación restringida
+
+## ¿Qué parámetros recibe el constructor?
+
+1. **`model`** — El modelo (objeto Small_LLM_Model)
+2. **`vocab`** — El vocabulario (objeto VocabIndex)
+
+## ¿Qué hace el constructor?
+
+Guarda el modelo y el vocabulario como atributos de la clase:
+```python
+def __init__(self, model: Small_LLM_Model, vocab: VocabIndex):
+    self.model = model
+    self.vocab = vocab
+```
+
+## ¿Dónde se crea el vocabulario?
+
+El vocabulario se crea **fuera** de la clase y se pasa como parámetro:
+```python
+model = Small_LLM_Model()
+vocab_path = model.get_path_to_vocab_file()
+vocab = VocabIndex(vocab_path)
+generator = JSONGenerator(model, vocab)
+```
+
+## ¿Por qué no crear el vocabulario dentro de la clase?
+
+Porque:
+1. **Es más fácil de probar** — Puedes pasar un vocabulario falso en tests
+2. **Es más flexible** — Puedes cambiar el vocabulario sin cambiar la clase
+3. **Es más limpio** — La clase no necesita saber cómo se crea el vocabulario
+
+## Conceptos clave:
+
+### Métodos de una clase necesitan `self`
+Todos los métodos de una clase necesitan `self` como primer parámetro:
+```python
+def select_function_name(self, prompt_ids: list, function_list: list):
+    # self.model y self.vocab están disponibles aquí
+    pass
+```
+
+### No pasar model como parámetro si ya está en self
+**Incorrecto:**
+```python
+def select_function_name(self, model: Small_LLM_Model, prompt_ids: list):
+    # model es redundante, ya tenemos self.model
+```
+
+**Correcto:**
+```python
+def select_function_name(self, prompt_ids: list):
+    # Usa self.model
+```
+
+### Llamar a funciones fuera de la clase
+**Incorrecto:**
+```python
+class JSONGenerator:
+    def __init__(self, model, vocab):
+        self.model = model
+        self.vocab = vocab
+
+    logs = get_next_token_logits(model)  # ❌ Está dentro de la clase pero fuera de cualquier método
+```
+
+**Correcto:**
+```python
+class JSONGenerator:
+    def __init__(self, model, vocab):
+        self.model = model
+        self.vocab = vocab
+
+# Fuera de la clase:
+model = Small_LLM_Model()
+vocab = VocabIndex(vocab_path)
+generator = JSONGenerator(model, vocab)
+```
+
+---
+
+# LECCIÓN 28: CREAR constrained_decoder.py — select_function_name
+
+## ¿Qué hace?
+
+Elige el nombre de una función usando decodificación restringida. Compara todos los nombres de funciones disponibles y elige el que tiene la puntuación más alta.
+
+## ¿Qué parámetros recibe?
+
+1. **`prompt_ids`** — Lista de IDs del prompt (el texto convertido a IDs)
+2. **`function_names`** — Lista de nombres de funciones disponibles (ej: ["fn_add_numbers", "fn_greet"])
+
+## ¿Cómo funciona paso a paso?
+
+1. **Convierte cada nombre de función a IDs** — Usa `self.model.encode(function_name).flatten().tolist()`
+2. **Para cada nombre, calcula una puntuación** — Usa `get_next_token_logits` y sumar los logits de cada token
+3. **Elige el nombre con la puntuación más alta** — El nombre más probable
+
+## Ejemplo concreto (no relacionado con el proyecto):
+
+Imagina que tienes dos funciones:
+- `sumar` → IDs [1, 2, 3]
+- `restar` → IDs [4, 5, 6]
+
+El modelo devuelve logits para el siguiente token. Para cada función, calculas la puntuación total de sus tokens:
+
+```
+sumar: 0.7 + 0.6 + 0.8 = 2.1
+restar: 0.3 + 0.2 + 0.1 = 0.6
+```
+
+La función con la puntuación más alta es `sumar`.
+
+## Conceptos clave:
+
+### Convertir texto a IDs
+Usa `model.encode(text).flatten().tolist()` para obtener una lista de IDs:
+```python
+tensor_ids = self.model.encode(fun_name)
+ids = tensor_ids.flatten().tolist()
+```
+
+### Calcular la puntuación total de una secuencia
+Suma los logits de cada token:
+```python
+score = 0
+for token_id in ids:
+    score += logits[token_id]
+```
+
+### Elegir el nombre con la puntuación más alta
+Compara las puntuaciones y devuelve el nombre con la puntuación más alta:
+```python
+best_name = max(scores, key=scores.get)
+```
+
+---
+
 # RESUMEN DE LAS FASES
 
 1. **Fase 0**: Preparar el entorno (carpetas, pyproject.toml, Makefile, llm_sdk, datos)
