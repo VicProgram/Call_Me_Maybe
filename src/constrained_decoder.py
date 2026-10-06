@@ -22,3 +22,18 @@ def apply_mask(logits: list, valid_ids: list) -> list[int]:
 def select_best_token(masked: list) -> int:
     best_token = np.argmax(masked)
     return best_token
+
+
+class JSONGenerator:
+
+    def __init__(self, model: Small_LLM_Model, vocab: VocabIndex):
+        self.model = model
+        self.vocab = vocab
+
+    logs = get_next_token_logits(model)
+
+vocab = VocabIndex(vocab_path)
+generator = JSONGenerator(model, vocab)
+
+vocab_path = Small_LLM_Model.get_path_to_vocab_file(Small_LLM_Model)
+git 
