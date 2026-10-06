@@ -1,5 +1,5 @@
 import json
-
+from typing import Any
 
 class VocabIndex:
     def __init__(self, json_path: str):
@@ -7,9 +7,10 @@ class VocabIndex:
         self.json_path = json_path
         data = self.load_json(self.json_path)
         # key_type = self.detect_key(data)
-        self.create_dict(data, key_type)
+        # self.create_dict(data, key_type)
+        self.create_dict(data)
 
-    def load_json(self, json_path: str):
+    def load_json(self, json_path: str) -> dict[str, Any]:
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -19,6 +20,7 @@ class VocabIndex:
 
         return data
 
+    # region
     # def detect_key(self, data: dict):
 
     #     first_key = next(iter(data))
@@ -29,8 +31,10 @@ class VocabIndex:
 
     #     except (ValueError, TypeError):
     #         return False
+    # endregion
 
-    def create_dict(self, data: dict, key_type: bool):
+    # def create_dict(self, data: dict, key_type: bool):
+    def create_dict(self, data: dict) -> None:
 
         # if key_type:
         self.token_to_id = data
@@ -40,7 +44,7 @@ class VocabIndex:
         #     self.id_to_token = data
         #     self.token_to_id = {v: k for k, v in data.items()}
 
-    def search_exact(self, token: str):
+    def search_exact(self, token: str) -> list[int]:
 
         token_id = self.token_to_id.get(token)
 
@@ -49,7 +53,7 @@ class VocabIndex:
 
         return []
 
-    def search_prefix(self, prefix: str):
+    def search_prefix(self, prefix: str) -> list[int]:
 
         valid_tokens = []
 
@@ -59,7 +63,7 @@ class VocabIndex:
 
         return valid_tokens
 
-    def search_characters(self, valid_chars: str):
+    def search_characters(self, valid_chars: str) -> list[int]:
 
         token_chars = []
 

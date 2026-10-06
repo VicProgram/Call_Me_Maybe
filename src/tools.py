@@ -3,7 +3,7 @@ import json
 from models import FunctionDefinition, TestPrompt, FunctionCall
 
 
-def json_reader(file_path: str):
+def json_reader(file_path: str) -> Any:
     """
     Reads a JSON file and returns its content as a Python object.
 
@@ -20,7 +20,7 @@ def json_reader(file_path: str):
         raise FileNotFoundError(f"Error: The file '{file_path}' was not found.")
 
 
-def load_function_def(fun_def_json: str):
+def load_function_def(fun_def_json: str) -> list[FunctionDefinition]:
 
     try:
         data = json_reader(fun_def_json)
@@ -43,7 +43,7 @@ def load_function_def(fun_def_json: str):
     return functions_def
 
 
-def load_prompt(prompt_json: str):
+def load_prompt(prompt_json: str) -> list[TestPrompt]:
 
     try:
         data = json_reader(prompt_json)
@@ -71,7 +71,7 @@ def load_prompt(prompt_json: str):
     return prompt_list
 
 
-def json_exporter(func_call_obj: list[FunctionCall], func_call_path: str):
+def json_exporter(func_call_obj: list[FunctionCall], func_call_path: str) -> None:
 
     if not os.path.exists(func_call_path):
         os.makedirs(

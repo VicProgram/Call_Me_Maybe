@@ -1,9 +1,9 @@
 from models import FunctionDefinition
-
+from typing import Any
 
 def function_selection(
         user_prompt: str, function_list: list[FunctionDefinition]
-        ):
+        ) -> str:
 
     formatted_functions = []
 
@@ -28,7 +28,7 @@ def function_selection(
 def arg_extract(
         selected_function: FunctionDefinition, user_prompt: str,
         target_param: str, extracted_args: dict
-                ):
+                ) -> dict[str, Any]:
 
     param_def = selected_function.parameters[target_param]
 
