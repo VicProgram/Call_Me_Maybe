@@ -6,7 +6,7 @@ class VocabIndex:
 
         self.json_path = json_path
         data = self.load_json(self.json_path)
-        key_type = self.detect_key(data)
+        # key_type = self.detect_key(data)
         self.create_dict(data, key_type)
 
     def load_json(self, json_path: str):
@@ -19,26 +19,26 @@ class VocabIndex:
 
         return data
 
-    def detect_key(self, data: dict):
+    # def detect_key(self, data: dict):
 
-        first_key = next(iter(data))
+    #     first_key = next(iter(data))
 
-        try:
-            int(first_key)
-            return True
+    #     try:
+    #         int(first_key)
+    #         return True
 
-        except (ValueError, TypeError):
-            return False
+    #     except (ValueError, TypeError):
+    #         return False
 
     def create_dict(self, data: dict, key_type: bool):
 
-        if key_type:
-            self.token_to_id = data
-            self.id_to_token = {v: k for k, v in data.items()}
+        # if key_type:
+        self.token_to_id = data
+        self.id_to_token = {v: k for k, v in data.items()}
 
-        else:
-            self.id_to_token = data
-            self.token_to_id = {v: k for k, v in data.items()}
+        # else:
+        #     self.id_to_token = data
+        #     self.token_to_id = {v: k for k, v in data.items()}
 
     def search_exact(self, token: str):
 

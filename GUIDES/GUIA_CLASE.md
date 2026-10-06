@@ -705,7 +705,10 @@ Implementa una función que lea un archivo JSON y lo convierta en datos Python.
 - Devolver los datos como objetos Python
 
 **Por qué lo haces:**
-Necesitas leer los archivos de entrada (funciones y preguntas) para que el programa pueda procesarlos.
+Necesitas leer los archivos de entrada (funciones y preguntas) para que el programa pueda procesarlos. Sin esta función, el programa no puede leer nada.
+
+**Para qué sirve:**
+Es la base de todas las demás funciones de lectura. `load_function_def` y `load_prompt` la usan para leer sus archivos.
 
 **Cómo debería funcionar:**
 Cuando llamas a la función, devuelve los datos del archivo JSON como objetos Python.
@@ -727,7 +730,10 @@ Implementa una función que cargue las definiciones de funciones y las valide co
 - Si alguna definición es inválida, indicar en qué índice falló
 
 **Por qué lo haces:**
-Necesitas validar que las funciones tengan el formato correcto antes de usarlas.
+Necesitas validar que las funciones tengan el formato correcto antes de usarlas. Si una función tiene un error (por ejemplo, le falta un campo), el programa debe detectarlo inmediatamente, no fallar más tarde de forma misteriosa.
+
+**Para qué sirve:**
+Convierte los datos JSON en objetos `FunctionDefinition` que el resto del programa puede usar. Sin esta función, el programa no puede usar las funciones disponibles.
 
 **Cómo debería funcionar:**
 Cuando llamas a la función, devuelve una lista de objetos FunctionDefinition.
@@ -749,10 +755,13 @@ Implementa una función que cargue los prompts de prueba.
 - Devolver una lista de strings
 
 **Por qué lo haces:**
-Necesitas leer las preguntas de prueba para que el programa pueda procesarlas.
+Necesitas leer las preguntas de prueba para que el programa pueda procesarlas. Los prompts pueden venir en diferentes formatos (string o diccionario), así que la función debe manejar ambos casos.
+
+**Para qué sirve:**
+Convierte los datos JSON en una lista de strings que el resto del programa puede usar. Sin esta función, el programa no puede leer las preguntas de prueba.
 
 **Cómo debería funcionar:**
-Cuando llamas a la función, devuelve una lista of strings.
+Cuando llamas a la función, devuelve una lista de strings.
 
 ---
 
@@ -771,7 +780,10 @@ Implementa una función que escriba los resultados en un archivo JSON.
 - Escribir el JSON en el archivo
 
 **Por qué lo haces:**
-Necesitas guardar los resultados para que el usuario pueda verlos.
+Necesitas guardar los resultados para que el usuario pueda verlos. Los objetos Pydantic no se pueden escribir directamente a JSON, hay que convertirlos a diccionarios primero.
+
+**Para qué sirve:**
+Guarda los resultados del programa en un archivo JSON. Sin esta función, el programa no puede guardar los resultados.
 
 **Cómo debería funcionar:**
 Cuando llamas a la función, crea el archivo JSON con los resultados.
@@ -1197,6 +1209,291 @@ funciones_texto = "\n".join(formated_func)
 
 ### No es hardcodeado
 El modelo es el que decide qué función llamar, no nosotros. La decodificación restringida (que implementaremos después) es lo que garantiza que el modelo solo pueda elegir entre las funciones disponibles.
+
+---
+
+# LECCIÓN 19: CREAR vocab.py — La intención y el qué
+
+## ¿Qué es un vocabulario?
+
+Imagina que tienes un diccionario gigante que dice:
+
+```
+"hola" → 1284
+"mundo" → 339
+"{" → 42
+"}" → 43
+```
+
+Esto es un **vocabulario**: un mapeo entre palabras (tokens) y números (IDs).
+
+## ¿Por qué lo necesitamos?
+
+El modelo solo entiende números. Cuando le pasas texto, lo convierte a números:
+
+```
+"hola mundo" → [1284, 339]
+```
+
+El modelo procesa estos números y devuelve puntuaciones para cada número posible. Pero nosotros queremos saber **qué palabra** corresponde a cada número. Para eso necesitamos el vocabulario.
+
+## ¿Cómo se usa en la decodificación restringida?
+
+Imagina que quieres extraer un número. Solo quieres permitir tokens que son dígitos:
+
+```
+"0" → ID 10
+"1" → ID 11
+"2" → ID 12
+...
+```
+
+Con el vocabulario, puedes buscar todos los tokens que son dígitos y obtener sus IDs. Después, puedes bloquear todos los demás tokens.
+
+## ¿Qué vamos a hacer en vocab.py?
+
+1. **Cargar el vocabulario** — Leer el archivo JSON y crear diccionarios de búsqueda
+2. **Detectar el formato** — El JSON puede ser `{"token": id}` o `{"id": token}`
+3. **Crear métodos de búsqueda** — Buscar tokens exactos, por prefijo, por caracteres
+
+---
+
+# LECCIÓN 20: CREAR vocab.py — Cargar y detectar el formato
+
+## Paso 1: Cargar el vocabulario
+
+El `vocab.json` del modelo es un diccionario JSON. Puede tener dos formatos:
+
+**Formato A** (clave = token, valor = ID):
+```json
+{"hola": 1284, "mundo": 339, "{": 42}
+```
+
+**Formato B** (clave = ID, valor = token):
+```json
+{"1284": "hola", "339": "mundo", "42": "{"}
+```
+
+## Paso 2: Detectar el formato automáticamente
+
+Para detectar el formato, puedes mirar la primera clave del diccionario:
+- Si la primera clave es un número → Formato B
+- Si la primera clave es un texto → Formato A
+
+Usa try/except para intentar convertir la primera clave a número:
+
+```python
+try:
+    int(first_key)
+    # Es un número → Formato B (clave = ID, valor = token)
+except (ValueError, TypeError):
+    # No es un número → Formato A (clave = token, valor = ID)
+```
+
+## Paso 3: Crear diccionarios de búsqueda
+
+Necesitas dos diccionarios:
+1. **token → ID** — Para buscar el ID de un token
+2. **ID → token** — Para buscar el token de un ID
+
+**Si es Formato A** (`{"token": id}`):
+```python
+self.token_to_id = data  # {"hola": 1284, "mundo": 339}
+self.id_to_token = {v: k for k, v in data.items()}  # {1284: "hola", 339: "mundo"}
+```
+
+**Si es Formato B** (`{"id": token}`):
+```python
+self.id_to_token = data  # {"1284": "hola", "339": "mundo"}
+self.token_to_id = {v: k for k, v in data.items()}  # {"hola": 1284, "mundo": 339}
+```
+
+## Conceptos clave:
+
+### Obtener la primera clave de un diccionario
+Los diccionarios no se acceden con `[0]`. Para obtener la primera clave:
+```python
+primera_clave = next(iter(diccionario.keys()))
+```
+
+### Crear un diccionario invertido
+Para invertir un diccionario (intercambiando claves y valores):
+```python
+diccionario_invertido = {v: k for k, v in diccionario.items()}
+```
+
+### try/except para detectar tipos
+Usa try/except para intentar convertir un valor a otro tipo:
+```python
+try:
+    int(valor)
+    # Es un número
+except (ValueError, TypeError):
+    # No es un número
+```
+
+---
+
+# LECCIÓN 21: CREAR vocab.py — Método search_exact
+
+## ¿Qué hace?
+
+Busca un token exacto en el diccionario y devuelve su ID.
+
+## Ejemplo:
+
+Si tienes:
+```python
+self.token_to_id = {"hola": 1284, "mundo": 339}
+```
+
+Y buscas `"hola"`, debería devolver `[1284]`.
+
+## ¿Cómo funciona paso a paso?
+
+1. **Recibe un token** — Por ejemplo, `"hola"`
+2. **Busca el token en el diccionario** — Usa `.get(token)`
+3. **Si existe, devuelve el ID como lista** — `[token_id]`
+4. **Si no existe, devuelve una lista vacía** — `[]`
+
+## Conceptos clave:
+
+### Buscar en un diccionario
+Usa `.get()` para buscar un valor en un diccionario:
+```python
+valor = diccionario.get(clave)
+# Si la clave no existe, devuelve None
+```
+
+### Devolver listas
+Aunque solo haya un elemento, devuelve una lista para consistencia:
+```python
+return [token_id]  # Si existe
+return []  # Si no existe
+```
+
+---
+
+# LECCIÓN 22: CREAR vocab.py — Método search_prefix
+
+## ¿Qué hace?
+
+Busca todos los tokens que **empiezan por un prefijo** y devuelve sus IDs.
+
+## ¿Por qué es importante?
+
+En la decodificación restringida, necesitas saber qué tokens son válidos en cada paso. Por ejemplo:
+- Para extraer un nombre de función, necesitas saber qué tokens empiezan por `"fn_"`
+- Para extraer un número, necesitas saber qué tokens son dígitos
+
+## Ejemplo concreto (no relacionado con el proyecto)
+
+Imagina que tienes un diccionario de palabras:
+
+```
+"casa" → 1
+"coche" → 2
+"perro" → 3
+"gato" → 4
+```
+
+Si buscas todas las palabras que empiezan por `"ca"`, el resultado debería ser:
+```
+[1, 2]  # casa, coche
+```
+
+## ¿Cómo funciona paso a paso?
+
+1. **Recibe un prefijo** — Por ejemplo, `"ca"`
+2. **Itera sobre todos los tokens** del diccionario
+3. **Verifica si cada token empieza por el prefijo** — Usa el método `.startswith()`
+4. **Si coincide, guarda el ID** — Añade el ID a una lista
+5. **Devuelve la lista de IDs** — Todos los IDs de tokens que empiezan por el prefijo
+
+## Conceptos clave:
+
+### Verificar si un string empieza por otro
+Usa el método `.startswith()`:
+```python
+token.startswith(prefijo)  # True o False
+```
+
+### Iterar sobre un diccionario
+Usa `.items()` para obtener clave y valor:
+```python
+for token, id in diccionario.items():
+    # token es la clave, id es el valor
+```
+
+---
+
+# LECCIÓN 23: CREAR vocab.py — Método search_characters
+
+## ¿Qué hace?
+
+Busca todos los tokens que están **compuestos solo por ciertos caracteres** y devuelve sus IDs.
+
+## ¿Por qué es importante?
+
+En la decodificación restringida, necesitas saber qué tokens son válidos en cada paso. Por ejemplo:
+- Para extraer un número, necesitas saber qué tokens son dígitos (`0-9`)
+- Para extraer un número con decimales, necesitas saber qué tokens son dígitos o el punto (`.`)
+
+## Ejemplo concreto (no relacionado con el proyecto)
+
+Imagina que tienes un diccionario de tokens:
+
+```
+"0" → 10
+"1" → 11
+"2" → 12
+"." → 13
+"a" → 14
+"b" → 15
+```
+
+Si buscas todos los tokens compuestos solo por dígitos (`"0123456789"`), el resultado debería ser:
+```
+[10, 11, 12]  # "0", "1", "2"
+```
+
+## ¿Cómo funciona paso a paso?
+
+1. **Recibe un string de caracteres permitidos** — Por ejemplo, `"0123456789"`
+2. **Itera sobre todos los tokens** del diccionario
+3. **Verifica si todos los caracteres del token están en los caracteres permitidos**
+4. **Si coincide, guarda el ID** — Añade el ID a una lista
+5. **Devuelve la lista de IDs** — Todos los IDs de tokens compuestos solo por esos caracteres
+
+## Conceptos clave:
+
+### Verificar si todos los caracteres están permitidos
+Usa `all()` con un generador:
+```python
+all(c in caracteres_permitidos for c in token)
+```
+
+**Ejemplo:**
+```python
+token = "0"
+caracteres_permitidos = "0123456789"
+all(c in caracteres_permitidos for c in token)  # True
+
+token = "a"
+caracteres_permitidos = "0123456789"
+all(c in caracteres_permitidos for c in token)  # False
+```
+
+### Error común: `valid_chars in token`
+**Incorrecto:**
+```python
+if valid_chars in token:  # Verifica si el string completo está en el token
+```
+
+**Correcto:**
+```python
+if all(c in valid_chars for c in token):  # Verifica si todos los caracteres del token están en valid_chars
+```
 
 ---
 
