@@ -1,5 +1,6 @@
 import numpy as np
 from llm_sdk import Small_LLM_Model
+from vocab import VocabIndex
 
 
 def get_next_token_logits(model: Small_LLM_Model, input_ids: list) -> list[int]:
@@ -30,9 +31,21 @@ class JSONGenerator:
         self.model = model
         self.vocab = vocab
 
-    logs = get_next_token_logits(model)
+    def select_function_name(self):
+        ...
+
+    def extract_number(self):
+        ...
+
+    def extract_string(self):
+        ...
+
+    def extract_boolean(self):
+        ...
 
 
-vocab_path = Small_LLM_Model.get_path_to_vocab_file(Small_LLM_Model)
-vocab = VocabIndex(vocab_path)
-generator = JSONGenerator(model, vocab)
+def load_generator() -> JSONGenerator:
+    model = Small_LLM_Model()
+    vocab_path = model.get_path_to_vocab_file(Small_LLM_Model)
+    vocab = VocabIndex(vocab_path)
+    return JSONGenerator(model, vocab)

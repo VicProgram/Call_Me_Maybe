@@ -1,6 +1,7 @@
 from models import FunctionDefinition
 from typing import Any
 
+
 def function_selection(
         user_prompt: str, function_list: list[FunctionDefinition]
         ) -> str:

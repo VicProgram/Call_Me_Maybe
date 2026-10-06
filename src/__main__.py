@@ -91,6 +91,8 @@ def main() -> int:
 
     return 0 if errors == 0 else 1
 
+# se usa para cargar el generador, hay que cambiarla de sitio
+# generator = load_generator()
 
 if __name__ == "__main__":
     sys.exit(main())

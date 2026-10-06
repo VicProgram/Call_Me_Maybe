@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+
 class VocabIndex:
     def __init__(self, json_path: str):
 
