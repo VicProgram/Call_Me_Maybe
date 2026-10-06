@@ -32,8 +32,7 @@ class JSONGenerator:
 
     logs = get_next_token_logits(model)
 
-vocab = VocabIndex(vocab_path)
-generator = JSONGenerator(model, vocab)
 
 vocab_path = Small_LLM_Model.get_path_to_vocab_file(Small_LLM_Model)
-git 
+vocab = VocabIndex(vocab_path)
+generator = JSONGenerator(model, vocab)
