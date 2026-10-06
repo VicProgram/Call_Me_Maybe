@@ -26,21 +26,19 @@ def function_selection(
 
 
 def arg_extract(
-        selected_function: FunctionDefinition, user_prompt : str,
-
+        selected_function: FunctionDefinition, user_prompt: str,
+        target_param: str, extracted_args: dict
                 ):
 
-    params_text = ""
-
-    for param_name, param_def in selected_function.parameters.items():
-        params_text += f"- {param_name} ({param_def.type}): {param_def.description}\n"
+    param_def = selected_function.parameters[target_param]
 
     main_prompt = (
-        f"Extract the arguments for the function '{selected_function.name}' "
-        f"from the user request.\n"
-        f"Required parameters:\n{params_text}\n"
+        f"Function '{selected_function.name}' - "
+        f"'{selected_function.description}'\n"
+        f"Extract parameter '{target_param}' (type: {param_def.type})\n"
+        f"Already extracted arguments: {extracted_args}\n"
         f"User request: {user_prompt}\n"
-        "Value of params: "
+        "Value: "
     )
 
     return main_prompt
