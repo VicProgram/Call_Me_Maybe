@@ -6,9 +6,15 @@
 
 ---
 
-# LECCIÓN 1: EL PROBLEMA QUE VAMOS A RESOLVER (30 minutos)
+# PARTE I: LOS FUNDAMENTOS (60 minutos)
 
-## 1.1. El mundo antes de este proyecto
+Antes de escribir una sola línea de código, necesitas entender tres conceptos fundamentales. Sin ellos, el código no tendrá sentido.
+
+---
+
+## LECCIÓN 1: El problema que vamos a resolver
+
+### 1.1. El mundo antes de este proyecto
 
 Imagina que trabajas en una empresa y te piden crear un sistema que entienda lenguaje humano. Por ejemplo, un usuario escribe:
 
@@ -19,17 +25,17 @@ Y tu sistema debe ser capaz de:
 2. Identificar los números 40 y 2
 3. Llamar a una función de suma con esos valores
 
-Eso suena fácil, pero hay un problema fundamental: los ordenadores no entienden el lenguaje humano. Solo entienden instrucciones muy precisas y estructuradas.
+Eso suena fácil, pero hay un problema fundamental: **los ordenadores no entienden el lenguaje humano**. Solo entienden instrucciones muy precisas y estructuradas.
 
-## 1.2. La solución obvia (y por qué no funciona)
+### 1.2. La solución obvia (y por qué no funciona)
 
 La primera idea que se te podría ocurrir es usar un modelo de lenguaje como ChatGPT. Le preguntas "¿qué función debo llamar?" y te responde.
 
-Pero aquí viene el problema: los modelos de lenguaje son **torpes con el formato**. Si le pides a un modelo que escriba JSON (un formato de datos muy estructurado), fallará muchas veces.
+Pero aquí viene el problema: **los modelos de lenguaje son torpes con el formato**. Si le pides a un modelo que escriba JSON (un formato de datos muy estructurado), fallará muchas veces.
 
 ¿Por qué? Porque los modelos de lenguaje están diseñados para generar texto natural, no para seguir reglas estrictas de formato. Es como pedirle a un poeta que escriba un formulario de Hacienda: puede que lo haga bien, pero probablemente se invente cosas o se salte campos.
 
-## 1.3. El problema específico de los modelos pequeños
+### 1.3. El problema específico de los modelos pequeños
 
 En este proyecto no vamos a usar un modelo enorme como GPT-4. Vamos a usar un modelo pequeño llamado Qwen3-0.6B, que tiene solo 600 millones de parámetros.
 
@@ -50,7 +56,7 @@ O peor:
 La función es sumar con a=40 y b=2   ← esto no es JSON
 ```
 
-## 1.4. La solución: no dejar que se equivoque
+### 1.4. La solución: no dejar que se equivoque
 
 La idea clave del proyecto es: **no le preguntes al modelo qué quiere escribir. Oblígalo a escribir solo lo que es válido.**
 
@@ -67,9 +73,9 @@ Esta técnica se llama **decodificación restringida** (constrained decoding en 
 
 ---
 
-# LECCIÓN 2: CÓMO FUNCIONA UN MODELO DE LENGUAJE POR DENTRO (30 minutos)
+## LECCIÓN 2: Cómo funciona un modelo de lenguaje por dentro
 
-## 2.1. Los tokens: los ladrillos del lenguaje
+### 2.1. Los tokens: los ladrillos del lenguaje
 
 Antes de entender la decodificación restringida, necesitas entender cómo funciona un modelo de lenguaje por dentro.
 
@@ -89,7 +95,7 @@ Piensa en el vocabulario como un diccionario gigante:
 - El signo "{" tiene el ID 42
 - El signo "}" tiene el ID 43
 
-## 2.2. Input IDs: el modelo solo entiende números
+### 2.2. Input IDs: el modelo solo entiende números
 
 Cuando le pasas texto al modelo, primero lo conviertes a números (IDs de tokens). Este proceso se llama **tokenización**.
 
@@ -97,7 +103,7 @@ Por ejemplo, si le pasas "Hola mundo", el modelo no ve las letras H-o-l-a-m-u-n-
 
 Esa lista de números es lo que el modelo recibe. Se llama **input_ids**.
 
-## 2.3. Logits: las puntuaciones del modelo
+### 2.3. Logits: las puntuaciones del modelo
 
 Cuando el modelo recibe los IDs, no te devuelve directamente "la siguiente palabra es X". Te devuelve una **puntuación** para cada uno de los 150.000 tokens de su vocabulario.
 
@@ -115,7 +121,7 @@ El modelo cree que lo más probable después de "¿Cuánto es 2+3?" es "?". Tien
 
 Normalmente, la IA elegiría el token con el logit más alto (el 5.4, que es "?"). Pero nosotros vamos a **modificar** esas puntuaciones.
 
-## 2.4. Softmax: convertir puntuaciones en probabilidades
+### 2.4. Softmax: convertir puntuaciones en probabilidades
 
 Los logits son números en bruto, difíciles de interpretar. Para convertirlos en probabilidades (números entre 0 y 1 que suman 1), se usa **softmax**.
 
@@ -130,19 +136,19 @@ El resultado: probabilidades que suman 1. Un token con probabilidad 0.8 signific
 
 En el proyecto usamos **log-softmax**, que es el logaritmo de la softmax. Es más estable numéricamente y más práctico para sumar probabilidades (en vez de multiplicarlas).
 
-## 2.5. Argmax: elegir el mejor
+### 2.5. Argmax: elegir el mejor
 
 El argmax es una operación que elige el elemento con valor máximo. Si tienes [0.3, 2.1, 5.4, 0.1], el argmax devuelve el índice 2 (el token con puntuación 5.4).
 
 ---
 
-# LECCIÓN 3: LA DECODIFICACIÓN RESTRINGIDA (30 minutos)
+## LECCIÓN 3: La decodificación restringida
 
-## 3.1. ¿Qué es?
+### 3.1. ¿Qué es?
 
 La decodificación restringida es una técnica que filtra las opciones del modelo en cada paso para que solo pueda elegir tokens válidos.
 
-## 3.2. Analogía: el menú del restaurante
+### 3.2. Analogía: el menú del restaurante
 
 Imagina que vas a un restaurante con un menú de 150 platos. El camarero (el modelo) te pregunta qué quieres.
 
@@ -154,7 +160,7 @@ En el proyecto:
 - El "menú" son los 150.000 tokens del vocabulario del modelo
 - La "restricción" es: "solo puedes elegir tokens que mantengan el JSON válido"
 
-## 3.3. ¿Cómo funciona paso a paso?
+### 3.3. ¿Cómo funciona paso a paso?
 
 Paso 1: El modelo genera puntuaciones para todos los tokens
 - Token "{" → puntuación 5.2
@@ -174,7 +180,7 @@ Paso 3: El modelo solo puede elegir entre los tokens con puntuación real
 
 Paso 4: Repites el proceso para el siguiente token
 
-## 3.4. ¿Por qué -infinito y no 0?
+### 3.4. ¿Por qué -infinito y no 0?
 
 Porque el modelo elige el token con el logit MÁS ALTO. Si pusiéramos 0, algunos tokens prohibidos podrían tener logits negativos (por ejemplo, -5) y el 0 sería mayor que esos, con lo que el token prohibido sería elegido.
 
@@ -182,49 +188,15 @@ Con -infinito, ningún token prohibido puede ser elegido jamás. Es la puntuaci�
 
 ---
 
-# LECCIÓN 4: ARQUITECTURA DEL PROYECTO (30 minutos)
+# PARTE II: MANOS A LA OBRA (3-4 horas)
 
-## 4.1. El mapa de los archivos
-
-El proyecto tiene una estructura de carpetas que organiza el código de forma lógica:
-
-- **src/**: Todo el código fuente está aquí
-  - **__init__.py**: Marca la carpeta como un módulo Python
-  - **__main__.py**: Punto de entrada (el que se ejecuta con "python -m src")
-  - **models.py**: Las "plantillas" de datos (Pydantic)
-  - **vocab.py**: El diccionario token ↔ ID
-  - **constrained_decoder.py**: El CORAZÓN del proyecto (decodificación restringida)
-  - **function_caller.py**: El ORQUESTADOR (coordina todo)
-  - **prompt_builder.py**: Construye los mensajes para la IA
-  - **tools.py**: Lee y escribe archivos
-
-- **llm_sdk/**: El SDK (caja de herramientas) para usar el modelo
-  - **llm_sdk/__init__.py**: Contiene la clase Small_LLM_Model
-
-- **data/**: Los archivos de datos
-  - **input/**: Los archivos de entrada (funciones y preguntas)
-  - **output/**: Los archivos de salida (resultados)
-
-- **Makefile**: Atajos para comandos frecuentes
-- **pyproject.toml**: Configuración del proyecto Python
-
-## 4.2. El flujo de principio a fin
-
-Vamos a seguir el viaje de una pregunta desde que entra hasta que sale:
-
-1. **LEER ARCHIVOS DE ENTRADA**: El programa lee las funciones disponibles y las preguntas de prueba
-2. **CARGAR EL MODELO**: Se carga el modelo Qwen3-0.6B
-3. **CONSTRUIR PROMPT DE SELECCIÓN**: Se construye un mensaje para el modelo que dice "estas son las funciones disponibles, ¿cuál quieres usar?"
-4. **ELEGIR FUNCIÓN**: El modelo elige la función más apropiada usando decodificación restringida
-5. **PARA CADA PARÁMETRO, EXTRAER VALOR**: Para cada parámetro de la función elegida, se construye un prompt y se extrae el valor usando decodificación restringida
-6. **ENSAMBLAR RESULTADO**: Se junta todo en un objeto FunctionCall
-7. **GUARDAR EN ARCHIVO**: Se escribe el resultado en un archivo JSON
+Ahora que entiendes la teoría, vamos a construir el proyecto paso a paso. Cada lección se centra en una función o documento específico.
 
 ---
 
-# LECCIÓN 5: MANOS A LA OBRA — FASE 0 (30 minutos)
+## LECCIÓN 4: Preparar el entorno de trabajo
 
-## Paso 5.1: Crear la estructura de carpetas
+### Paso 4.1: Crear la estructura de carpetas
 
 **Qué hacer:**
 Crea las carpetas que necesitas para el proyecto.
@@ -243,7 +215,7 @@ Después de ejecutar el comando, deberías ver las carpetas creadas. Puedes comp
 
 ---
 
-## Paso 5.2: Crear pyproject.toml
+### Paso 4.2: Crear pyproject.toml
 
 **Qué hacer:**
 Crea un archivo `pyproject.toml` en la raíz del proyecto con las dependencias necesarias.
@@ -273,7 +245,7 @@ Cuando ejecutes `uv sync`, Python leerá este archivo e instalará las dependenc
 
 ---
 
-## Paso 5.3: Crear el Makefile
+### Paso 4.3: Crear el Makefile
 
 **Qué hacer:**
 Crea un archivo `Makefile` con atajos para comandos frecuentes.
@@ -307,7 +279,7 @@ Cuando escribas `make run`, el programa debería ejecutarse. Si hay errores, el 
 
 ---
 
-## Paso 5.4: Copiar llm_sdk
+### Paso 4.4: Copiar llm_sdk
 
 **Qué hacer:**
 Copia la carpeta `llm_sdk` en la raíz del proyecto.
@@ -326,7 +298,7 @@ Después de copiarlo, deberías ver la carpeta `llm_sdk/` con un archivo `__init
 
 ---
 
-## Paso 5.5: Crear los archivos de datos de entrada
+### Paso 4.5: Crear los archivos de datos de entrada
 
 **Qué hacer:**
 Crea los archivos JSON con las funciones disponibles y las preguntas de prueba.
@@ -344,11 +316,10 @@ Cuando el programa se ejecute, leerá estos archivos y procesará cada pregunta.
 
 ---
 
-# LECCIÓN 6: MANOS A LA OBRA — FASE 1 (45 minutos)
+## LECCIÓN 5: Crear los modelos de datos (models.py)
 
-## Paso 6.1: Entender qué son los modelos de datos y por qué existen
+### 5.1. ¿Qué son los modelos de datos y por qué existen?
 
-**Qué es:**
 Los modelos de datos son "plantillas" que definen cómo deben ser los datos. Si un dato no encaja en la plantilla, el programa lanza un error.
 
 **Por qué los necesitas:**
@@ -369,7 +340,7 @@ Piensa en BaseModel como un formulario de impuestos. El formulario tiene campos 
 
 ---
 
-## Paso 6.2: Crear ParameterDefinition
+### 5.2. Crear ParameterDefinition
 
 **Qué hacer:**
 Define la plantilla para un parámetro de función.
@@ -389,7 +360,7 @@ Si intentas crear un parámetro con un tipo que no es un texto, Pydantic lanzar�
 
 ---
 
-## Paso 6.3: Crear FunctionDefinition
+### 5.3. Crear FunctionDefinition
 
 **Qué hacer:**
 Define la plantilla para una función completa.
@@ -413,7 +384,7 @@ Si intentas crear una función sin nombre o con parámetros inválidos, Pydantic
 
 ---
 
-## Paso 6.4: Crear FunctionCall
+### 5.4. Crear FunctionCall
 
 **Qué hacer:**
 Define la plantilla para el resultado final.
@@ -435,487 +406,34 @@ Cuando el programa genera un resultado, crea un objeto FunctionCall con los dato
 
 ---
 
-# LECCIÓN 7: MANOS A LA OBRA — FASE 2 (45 minutos)
-
-## Paso 7.1: Entender qué es el vocabulario
-
-**Qué es:**
-El vocabulario es un diccionario que asocia tokens (texto) con IDs (números). El modelo solo entiende números, así que necesitas esta traducción.
-
-**Por qué lo necesitas:**
-Cuando el modelo devuelve logits, devuelve puntuaciones para cada ID del vocabulario. Para saber qué token corresponde a cada ID, necesitas el vocabulario.
-
----
-
-## Paso 7.2: Cargar el archivo vocab.json
+### 5.5. Crear TestPrompt
 
 **Qué hacer:**
-Carga el archivo vocab.json del modelo y construye diccionarios de búsqueda.
+Define la plantilla para un prompt de prueba.
 
 **Qué necesita:**
-- La ruta al archivo vocab.json del modelo
+- Un campo para el texto del prompt
 
 **Qué debe hacer:**
-- Cargar el archivo JSON
-- Detectar automáticamente el formato del archivo (clave = token o clave = ID)
-- Construir dos diccionarios: uno para buscar IDs a partir de tokens y otro para buscar tokens a partir de IDs
+- Validar que el prompt sea un texto válido
 
 **Por qué lo haces:**
-El archivo vocab.json puede tener 150.000 entradas. Necesitas una forma eficiente de buscar tokens e IDs.
+Los prompts de prueba son las preguntas que el sistema debe procesar. Esta plantilla asegura que cada prompt sea un texto válido.
 
 **Cómo debería funcionar:**
-Cuando creas un objeto VocabIndex, carga el archivo y construye los diccionarios. Después, puedas buscar tokens e IDs rápidamente.
+Cuando el programa lee los prompts de prueba, crea objetos TestPrompt con los datos correctos.
 
 ---
 
-## Paso 7.3: Implementar métodos de búsqueda
+## LECCIÓN 6: Crear las herramientas de entrada/salida (tools.py)
 
-**Qué hacer:**
-Implementa métodos para buscar tokens exactos, tokens que empiezan por un prefijo y tokens compuestos por ciertos caracteres.
+### 6.1. Implementar json_reader
 
-**Qué necesita:**
-- Un texto o prefijo para buscar
-
-**Qué debe hacer:**
-- Buscar en el diccionario y devolver los IDs que cumplen la condición
-- Si no hay resultados, devolver una lista vacía
-
-**Por qué lo haces:**
-En la decodificación restringida, necesitas saber qué tokens son válidos en cada paso. Por ejemplo, para extraer un número, necesitas saber qué tokens son dígitos.
-
-**Cómo debería funcionar:**
-Cuando llamas al método con un prefijo, devuelve todos los IDs de tokens que empiezan por ese prefijo.
-
----
-
-# LECCIÓN 8: MANOS A LA OBRA — FASE 3 (60 minutos)
-
-## Paso 8.1: Entender qué es la decodificación restringida
-
-**Qué es:**
-La decodificación restringida es una técnica que filtra las opciones del modelo en cada paso para que solo pueda elegir tokens válidos.
-
-**Por qué la necesitas:**
-El modelo Qwen3-0.6B es pequeño y falla el 70% de las veces cuando se le pide JSON. La decodificación restringida hace que sea físicamente imposible que el modelo escriba algo incorrecto.
-
----
-
-## Paso 8.2: Implementar get_next_token_logits
-
-**Qué hacer:**
-Implementa una función que pide al modelo las puntuaciones para el siguiente token.
-
-**Qué necesita:**
-- El modelo
-- Una lista de IDs de tokens
-
-**Qué debe hacer:**
-- Pasar los IDs al modelo
-- Obtener los logits del modelo
-- Convertir los logits a un array de NumPy
-- Devolver el array de logits
-
-**Por qué lo haces:**
-El modelo devuelve puntuaciones para cada token del vocabulario. Necesitas estas puntuaciones para saber qué token es el más probable.
-
-**Cómo debería funcionar:**
-Cuando llamas a la función, devuelve una lista de 150.000 números (uno por cada token del vocabulario).
-
----
-
-## Paso 8.3: Implementar apply_mask
-
-**Qué hacer:**
-Implementa una función que pone -infinito a los tokens que no son válidos.
-
-**Qué necesita:**
-- Los logits del modelo
-- Una lista de IDs válidos
-
-**Qué debe hacer:**
-- Crear un array nuevo lleno de -infinito
-- Para cada ID válido, copiar su logit original a esa posición
-- Devolver el array enmascarado
-
-**Por qué lo haces:**
-El modelo elige el token con la puntuación más alta. Si pones -infinito a los tokens inválidos, el modelo no puede elegirlos nunca.
-
-**Cómo debería funcionar:**
-Cuando llamas a la función, devuelve una lista donde los tokens inválidos tienen -infinito y los válidos tienen su puntuación original.
-
----
-
-## Paso 8.4: Implementar select_best_token
-
-**Qué hacer:**
-Implementa una función que elija el token con la puntuación más alta.
-
-**Qué necesita:**
-- Los logits enmascarados
-
-**Qué debe hacer:**
-- Encontrar el token con la puntuación más alta
-- Devolver su ID
-- Si todos son -infinito, devolver None
-
-**Por qué lo haces:**
-Después de aplicar la máscara, necesitas saber qué token es el más probable entre los válidos.
-
-**Cómo debería funcionar:**
-Cuando llamas a la función, devuelve el ID del token con la puntuación más alta. Si todos son -infinito, devuelve None.
-
----
-
-## Paso 8.5: Implementar la clase JSONGenerator
-
-**Qué hacer:**
-Crea una clase que coordine todo el proceso de generación con restricciones.
-
-**Qué necesita:**
-- El modelo
-- El vocabulario
-
-**Qué debe hacer:**
-- Tener un método para seleccionar el nombre de una función
-- Tener un método para extraer un número
-- Tener un método para extraer un string
-- Tener un método para extraer un boolean
-- En cada paso, aplicar la máscara para que el modelo solo pueda elegir tokens válidos
-
-**Por qué lo haces:**
-Esta clase es el corazón del proyecto. Contiene toda la lógica de la decodificación restringida.
-
-**Cómo debería funcionar:**
-Cuando llamas a un método, el modelo genera texto token a token, y en cada paso solo puede elegir tokens válidos.
-
----
-
-# LECCIÓN 9: MANOS A LA OBRA — FASE 4 (45 minutos)
-
-## Paso 9.1: Entender qué es un prompt
-
-**Qué es:**
-Un prompt es el texto que le pasamos al modelo para guiar su respuesta.
-
-**Por qué lo necesitas:**
-La forma en que le preguntamos al modelo afecta mucho a la respuesta. Un buen prompt hace que el modelo entienda exactamente qué quieres.
-
----
-
-## Paso 9.2: Implementar build_function_selection_prompt
-
-**Qué hacer:**
-Construye un prompt que pregunte al modelo qué función quiere usar.
-
-**Qué necesita:**
-- La pregunta del usuario
-- La lista de funciones disponibles
-
-**Qué debe hacer:**
-- Construir un texto que explique al modelo qué debe hacer
-- Incluir la lista de funciones disponibles
-- Terminar el prompt con "Function to call: " para que el modelo "quiera" continuar con el nombre de una función
-
-**Por qué lo haces:**
-El prompt termina con "Function to call: " para que el modelo "quiera" continuar con el nombre de una función.
-
-**Cómo debería funcionar:**
-Cuando el modelo recibe este prompt, genera el nombre de la función más apropiada.
-
----
-
-## Paso 9.3: Implementar build_argument_extraction_prompt
-
-**Qué hacer:**
-Construye un prompt que pregunte al modelo qué valor tiene un parámetro.
-
-**Qué necesita:**
-- La pregunta del usuario
-- La función elegida
-- El parámetro que quieres extraer
-- Los argumentos ya extraídos (para dar contexto al modelo)
-
-**Qué debe hacer:**
-- Construir un texto que explique al modelo qué debe hacer
-- Incluir la información de la función y el parámetro
-- Si ya hay argumentos extraídos, incluirlos como contexto
-- Terminar el prompt con "Value: " para que el modelo "quiera" continuar con el valor del parámetro
-
-**Por qué lo haces:**
-El prompt termina con "Value: " para que el modelo "quiera" continuar con el valor del parámetro.
-
-**Cómo debería funcionar:**
-Cuando el modelo recibe este prompt, genera el valor del parámetro.
-
----
-
-# LECCIÓN 10: MANOS A LA OBRA — FASE 5 (30 minutos)
-
-## Paso 10.1: Entender qué es el orquestador
-
-**Qué es:**
-El orquestador es la clase que coordina todo el proceso. Es como el director de orquesta: no toca ningún instrumento, pero sabe cuándo debe entrar cada uno.
-
-**Por qué lo necesitas:**
-El proceso tiene varios pasos: elegir función, extraer argumentos, ensamblar resultado. El orquestador se encarga de que estos pasos se ejecuten en el orden correcto.
-
----
-
-## Paso 10.2: Implementar el método resolve
-
-**Qué hacer:**
-Implementa un método que recibe una pregunta y una lista de funciones, y devuelve un objeto FunctionCall.
-
-**Qué necesita:**
-- La pregunta del usuario
-- La lista de funciones disponibles
-- El decodificador restringido
-- El constructor de prompts
-
-**Qué debe hacer:**
-1. Construir el prompt de selección de función
-2. Elegir la función usando el decodificador
-3. Para cada parámetro de la función:
-   - Construir el prompt de extracción
-   - Extraer el valor usando el decodificador
-4. Ensamblar el resultado en un objeto FunctionCall
-
-**Por qué lo haces:**
-Este método es el punto de entrada del proceso. Cuando lo llamas, el sistema completo se pone en marcha.
-
-**Cómo debería funcionar:**
-Cuando llamas al método, devuelve un objeto FunctionCall con la pregunta original, el nombre de la función elegida y los argumentos extraídos.
-
----
-
-# LECCIÓN 11: MANOS A LA OBRA — FASE 6 (30 minutos)
-
-## Paso 11.1: Implementar json_reader
-
-**Qué hacer:**
-Implementa una función que lea un archivo JSON y lo convierta en datos Python.
-
-**Qué necesita:**
-- La ruta al archivo JSON
-
-**Qué debe hacer:**
-- Verificar que el archivo exista
-- Abrir el archivo
-- Cargar el JSON
-- Devolver los datos como objetos Python
-
-**Por qué lo haces:**
-Necesitas leer los archivos de entrada (funciones y preguntas) para que el programa pueda procesarlos. Sin esta función, el programa no puede leer nada.
-
-**Para qué sirve:**
-Es la base de todas las demás funciones de lectura. `load_function_def` y `load_prompt` la usan para leer sus archivos.
-
-**Cómo debería funcionar:**
-Cuando llamas a la función, devuelve los datos del archivo JSON como objetos Python.
-
----
-
-## Paso 11.2: Implementar load_function_def
-
-**Qué hacer:**
-Implementa una función que cargue las definiciones de funciones y las valide con Pydantic.
-
-**Qué necesita:**
-- La ruta al archivo JSON con las definiciones de funciones
-
-**Qué debe hacer:**
-- Leer el JSON
-- Verificar que sea una lista
-- Para cada elemento, crear un objeto FunctionDefinition
-- Si alguna definición es inválida, indicar en qué índice falló
-
-**Por qué lo haces:**
-Necesitas validar que las funciones tengan el formato correcto antes de usarlas. Si una función tiene un error (por ejemplo, le falta un campo), el programa debe detectarlo inmediatamente, no fallar más tarde de forma misteriosa.
-
-**Para qué sirve:**
-Convierte los datos JSON en objetos `FunctionDefinition` que el resto del programa puede usar. Sin esta función, el programa no puede usar las funciones disponibles.
-
-**Cómo debería funcionar:**
-Cuando llamas a la función, devuelve una lista de objetos FunctionDefinition.
-
----
-
-## Paso 11.3: Implementar load_prompt
-
-**Qué hacer:**
-Implementa una función que cargue los prompts de prueba.
-
-**Qué necesita:**
-- La ruta al archivo JSON con los prompts
-
-**Qué debe hacer:**
-- Leer el JSON
-- Verificar que sea una lista
-- Para cada elemento, extraer el texto del prompt
-- Devolver una lista de strings
-
-**Por qué lo haces:**
-Necesitas leer las preguntas de prueba para que el programa pueda procesarlas. Los prompts pueden venir en diferentes formatos (string o diccionario), así que la función debe manejar ambos casos.
-
-**Para qué sirve:**
-Convierte los datos JSON en una lista de strings que el resto del programa puede usar. Sin esta función, el programa no puede leer las preguntas de prueba.
-
-**Cómo debería funcionar:**
-Cuando llamas a la función, devuelve una lista de strings.
-
----
-
-## Paso 11.4: Implementar json_exporter
-
-**Qué hacer:**
-Implementa una función que escriba los resultados en un archivo JSON.
-
-**Qué necesita:**
-- La lista de objetos FunctionCall
-- La ruta al archivo de salida
-
-**Qué debe hacer:**
-- Crear la carpeta si no existe
-- Convertir los objetos FunctionCall a diccionarios
-- Escribir el JSON en el archivo
-
-**Por qué lo haces:**
-Necesitas guardar los resultados para que el usuario pueda verlos. Los objetos Pydantic no se pueden escribir directamente a JSON, hay que convertirlos a diccionarios primero.
-
-**Para qué sirve:**
-Guarda los resultados del programa en un archivo JSON. Sin esta función, el programa no puede guardar los resultados.
-
-**Cómo debería funcionar:**
-Cuando llamas a la función, crea el archivo JSON con los resultados.
-
----
-
-# LECCIÓN 12: MANOS A LA OBRA — FASE 7 (30 minutos)
-
-## Paso 12.1: Implementar parse_args
-
-**Qué hacer:**
-Implementa una función que defina los argumentos que acepta el programa.
-
-**Qué necesita:**
-- Ninguno (usa argparse de la librería estándar)
-
-**Qué debe hacer:**
-- Definir el argumento --input (directorio de entrada)
-- Definir el argumento --output (archivo de salida)
-- Devolver los argumentos parseados
-
-**Por qué lo haces:**
-El programa necesita saber dónde están los archivos de entrada y dónde guardar los resultados.
-
-**Cómo debería funcionar:**
-Cuando ejecutas el programa con --input y --output, el programa usa esas rutas.
-
----
-
-## Paso 12.2: Implementar main
-
-**Qué hacer:**
-Implementa la función principal que coordina todo el proceso.
-
-**Qué necesita:**
-- Los argumentos parseados
-- Las rutas a los archivos de entrada y salida
-
-**Qué debe hacer:**
-1. Parsear los argumentos
-2. Cargar los archivos de entrada
-3. Cargar el modelo
-4. Crear el FunctionCaller
-5. Para cada prompt, llamar a caller.resolve()
-6. Escribir los resultados
-7. Mostrar un resumen
-
-**Por qué lo haces:**
-Esta función es el punto de entrada del programa. Cuando la llamas, todo el sistema se pone en marcha.
-
-**Cómo debería funcionar:**
-Cuando ejecutas el programa, procesa todas las preguntas y genera un archivo JSON con los resultados.
-
----
-
-## Paso 12.3: Añadir el bloque if __name__ == "__main__"
-
-**Qué hacer:**
-Añade el bloque estándar de Python que ejecuta main() cuando el archivo se ejecuta directamente.
-
-**Qué necesita:**
-- Ninguno
-
-**Qué debe hacer:**
-- Verificar si el archivo se ejecuta directamente
-- Si es así, ejecutar main() y salir con el código de retorno
-
-**Por qué lo haces:**
-Este bloque es estándar en Python. Significa: "Si este archivo se ejecuta directamente (no importado), ejecuta main()".
-
-**Cómo debería funcionar:**
-Cuando ejecutas python -m src, el programa ejecuta main() y devuelve un código de salida (0 = éxito, 1 = error).
-
----
-
-# LECCIÓN 13: MANOS A LA OBRA — FASE 8 (15 minutos)
-
-## Paso 13.1: Ejecutar el programa
-
-**Qué hacer:**
-Ejecuta el programa con make run o uv run python -m src.
-
-**Cómo hacerlo:**
-Escribe el comando en la terminal.
-
-**Por qué lo haces:**
-Necesitas comprobar que el programa funciona correctamente.
-
-**Cómo debería funcionar:**
-El programa debería cargar el modelo, procesar todas las preguntas y generar un archivo JSON con los resultados.
-
----
-
-## Paso 13.2: Comprobar los resultados
-
-**Qué hacer:**
-Abre el archivo de salida y comprueba que los resultados son correctos.
-
-**Cómo hacerlo:**
-Abre data/output/function_calling_results.json y revisa cada resultado.
-
-**Por qué lo haces:**
-Necesitas comprobar que el programa ha elegido las funciones correctas y ha extraído los argumentos correctos.
-
-**Cómo debería funcionar:**
-Cada resultado debería tener un prompt, un fn_name y un args con los valores correctos.
-
----
-
-## Paso 13.3: Depurar errores
-
-**Qué hacer:**
-Si hay errores, usa make debug para ejecutar el programa en modo depuración.
-
-**Cómo hacerlo:**
-Escribe make debug en la terminal.
-
-**Por qué lo haces:**
-El modo depuración te permite ejecutar el programa paso a paso y ver dónde está el error.
-
-**Cómo debería funcionar:**
-El programa se detendrá en el error y podrás ver los valores de las variables.
-
----
-
-# LECCIÓN 14: CREAR tools.py — Función 1: json_reader
-
-## Qué es json_reader?
+**Qué es json_reader?**
 
 Es una función que lee un archivo JSON y lo convierte en datos Python. Es la base de todo: sin ella, el programa no puede leer los archivos de entrada.
 
-## Qué necesita hacer:
+**Qué necesita hacer:**
 
 1. **Recibir una ruta de archivo** (un string o un objeto Path)
 2. **Verificar que el archivo exista** — Si no existe, lanzar un error claro
@@ -923,21 +441,21 @@ Es una función que lee un archivo JSON y lo convierte en datos Python. Es la ba
 4. **Cargar el JSON** — Usa la librería `json` para convertir el contenido del archivo en datos Python
 5. **Devolver los datos** — El resultado puede ser un diccionario, una lista, o cualquier estructura JSON
 
-## Por qué es importante:
+**Por qué es importante:**
 
 - Sin esta función, el programa no puede leer las funciones disponibles ni las preguntas de prueba
 - Es la base para todas las demás funciones de lectura/escritura
 - Debe manejar errores claramente: si el archivo no existe o el JSON está mal formado, el usuario debe entender qué pasó
 
-## Cómo debería funcionar:
+**Cómo debería funcionar:**
 
 - Si el archivo existe y el JSON es válido → devuelve los datos
 - Si el archivo no existe → lanza un error claro ("Archivo no encontrado: {ruta}")
 - Si el JSON está mal formado → lanza un error claro ("JSON inválido en {ruta}: {error}")
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Context manager
+#### Context manager
 Un context manager es una forma de asegurar que un recurso se cierra automáticamente cuando terminas de usarlo. En Python, se usa la palabra clave `with`:
 
 ```python
@@ -947,18 +465,18 @@ with open("archivo.txt", "r") as f:
 # Aquí el archivo se ha cerrado automáticamente
 ```
 
-### Manejo de errores
+#### Manejo de errores
 Es importante manejar errores claramente para que el usuario entendió qué pasó. Usa try/except para capturar errores y lanzar mensajes claros.
 
 ---
 
-# LECCIÓN 15: CREAR tools.py — Función 2: load_function_def
+### 6.2. Implementar load_function_def
 
-## Qué es load_function_def?
+**Qué es load_function_def?**
 
 Es una función que carga las definiciones de funciones desde un archivo JSON y las valide con Pydantic. Convierte los datos JSON en objetos `FunctionDefinition`.
 
-## Qué necesita hacer:
+**Qué necesita hacer:**
 
 1. **Recibir una ruta de archivo** — El archivo JSON con las definiciones de funciones
 2. **Leer el archivo** — Usa `json_reader` (la función que acabas de crear)
@@ -967,38 +485,38 @@ Es una función que carga las definiciones de funciones desde un archivo JSON y 
 5. **Manejar errores** — Si alguna definición es inválida, indicar en qué índice falló
 6. **Devolver la lista de funciones** — Una lista de objetos `FunctionDefinition`
 
-## Por qué es importante:
+**Por qué es importante:**
 
 - Sin esta función, el programa no puede usar las funciones disponibles
 - Valida que las funciones tengan el formato correcto antes de usarlas
 - Si hay un error en el JSON, el usuario debe entender exactamente qué está mal y dónde
 
-## Cómo debería funcionar:
+**Cómo debería funcionar:**
 
 - Si el JSON es válido → devuelve una lista de objetos `FunctionDefinition`
 - Si el JSON no es una lista → lanza un error claro
 - Si alguna función es inválida → lanza un error indicando el índice
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Verificar tipos
+#### Verificar tipos
 Usa `isinstance(data, list)` para verificar que los datos son una lista antes de iterar.
 
-### Iterar y crear objetos
+#### Iterar y crear objetos
 Para cada elemento en la lista, crea un objeto `FunctionDefinition` y añádelo a una lista.
 
-### Manejar errores en bucles
+#### Manejar errores en bucles
 Usa try/except dentro del bucle para capturar errores e indicar qué elemento falló.
 
 ---
 
-# LECCIÓN 16: CREAR tools.py — Función 3: load_prompt
+### 6.3. Implementar load_prompt
 
-## Qué es load_prompt?
+**Qué es load_prompt?**
 
-Es una función que carga los prompts de prueba desde un archivo JSON. Los prompts son las preguntas que el sistema debe procesar.
+Es una función que carga los prompts de prueba desde un archivo JSON. Los prompts son las preguntas que el sistema debe processar.
 
-## Qué necesita hacer:
+**Qué necesita hacer:**
 
 1. **Recibir una ruta de archivo** — El archivo JSON con los prompts
 2. **Leer el archivo** — Usa `json_reader`
@@ -1006,36 +524,36 @@ Es una función que carga los prompts de prueba desde un archivo JSON. Los promp
 4. **Extraer el texto de cada prompt** — Cada prompt puede ser un string o un diccionario con un campo "prompt"
 5. **Devolver una lista de strings** — Una lista con los textos de los prompts
 
-## Por qué es importante:
+**Por qué es importante:**
 
 - Sin esta función, el programa no puede leer las preguntas de prueba
 - Los prompts pueden venir en diferentes formatos (string o diccionario), así que la función debe manejar ambos casos
 - Es la última función de lectura que necesitas antes de empezar con la lógica del modelo
 
-## Cómo debería funcionar:
+**Cómo debería funcionar:**
 
 - Si el JSON es válido → devuelve una lista de strings
 - Si el JSON no es una lista → lanza un error claro
 - Si un prompt es un diccionario → extrae el campo "prompt"
 - Si un prompt es un string → lo usa directamente
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Manejar múltiples formatos
+#### Manejar múltiples formatos
 Los prompts pueden venir como strings o diccionarios. Usa `isinstance()` para verificar el tipo y manejar cada caso.
 
-### TestPrompt
+#### TestPrompt
 Es una clase Pydantic que representa un prompt de prueba. Tiene un campo `prompt` de tipo string.
 
 ---
 
-# LECCIÓN 17: CREAR tools.py — Función 4: json_exporter
+### 6.4. Implementar json_exporter
 
-## Qué es json_exporter?
+**Qué es json_exporter?**
 
 Es una función que escribe los resultados en un archivo JSON. Es la última función de `tools.py`.
 
-## Qué necesita hacer:
+**Qué necesita hacer:**
 
 1. **Recibir una lista de objetos `FunctionCall`** — Los resultados del programa
 2. **Recibir una ruta de archivo** — Dónde guardar el JSON
@@ -1043,55 +561,55 @@ Es una función que escribe los resultados en un archivo JSON. Es la última fun
 4. **Convertir los objetos a diccionarios** — Los objetos `FunctionCall` no se pueden escribir directamente a JSON, hay que convertirlos
 5. **Escribir el JSON en el archivo** — Usa un context manager para abrir el archivo y escribir
 
-## Por qué es importante:
+**Por qué es importante:**
 
 - Sin esta función, el programa no puede guardar los resultados
 - Debe crear la carpeta si no existe, porque si no, fallará al intentar escribir
 - Los objetos Pydantic tienen un método para convertirse a diccionarios
 
-## Cómo debería funcionar:
+**Cómo debería funcionar:**
 
 - Si la carpeta no existe → la crea
 - Si el archivo se escribe correctamente → no devuelve nada (o devuelve None)
 - Si hay un error → lanza un error claro
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### pathlib
+#### pathlib
 `pathlib` es una librería estándar de Python para trabajar con rutas de archivos. Está permitida en el subject porque es parte de la stdlib.
 
-### Crear carpetas
+#### Crear carpetas
 Usa `path.mkdir(parents=True, exist_ok=True)` para crear una carpeta si no existe. El parámetro `parents=True` crea las carpetas padre si no existen, y `exist_ok=True` evita errores si la carpeta ya existe.
 
-### Convertir objetos Pydantic a diccionarios
+#### Convertir objetos Pydantic a diccionarios
 Los objetos Pydantic tienen un método `.dict()` que los convierte en diccionarios. Esto es necesario porque JSON no puede serializar objetos Pydantic directamente.
 
-### Escribir JSON con formato legible
+#### Escribir JSON con formato legible
 Usa `json.dump(data, f, indent=4)` para escribir JSON con sangría de 4 espacios. Esto hace que el JSON sea más legible para los humanos.
 
 ---
 
-# LECCIÓN 18: CREAR prompt_builder.py
+## LECCIÓN 7: Crear el constructor de prompts (prompt_builder.py)
 
-## Qué es prompt_builder.py?
+### 7.1. ¿Qué es un prompt?
 
-Es un módulo que construye los mensajes (prompts) que le pasamos al modelo. La forma en que le preguntamos al modelo afecta mucho a la respuesta.
+Un prompt es el texto que le pasamos al modelo para guiar su respuesta.
 
-## Por qué es importante:
+**Por qué lo necesitas:**
+La forma en que le preguntamos al modelo afecta mucho a la respuesta. Un buen prompt hace que el modelo entienda exactamente qué quieres.
 
-El modelo es como una persona muy inteligente pero que no sabe qué quieres hacer. Si no le das instrucciones claras, no sabrá qué responder.
+---
 
-## Función 1: function_selection (build_function_selection_prompt)
+### 7.2. Implementar function_selection
 
-### ¿Qué hace?
+**Qué hace:**
 Construye un texto que pregunta al modelo qué función quiere usar.
 
-### ¿Qué necesita?
+**Qué necesita:**
 1. La pregunta del usuario (ej: "What is the sum of 2 and 3?")
 2. La lista de funciones disponibles (ej: fn_add_numbers, fn_greet, etc.)
 
-### ¿Cómo funciona paso a paso?
-
+**Qué debe hacer:**
 1. **Empieza con un rol** — Dile al modelo quién es:
    ```
    "You are a function calling assistant."
@@ -1119,7 +637,7 @@ Construye un texto que pregunta al modelo qué función quiere usar.
    "Function to call: "
    ```
 
-### El resultado final sería:
+**El resultado final sería:**
 ```
 You are a function calling assistant. Select the most appropriate function for the user's request.
 
@@ -1132,22 +650,48 @@ User request: What is the sum of 2 and 3?
 Function to call: 
 ```
 
-### ¿Por qué termina con "Function to call: "?
+**¿Por qué termina con "Function to call: "?**
 Porque el modelo "quiere" continuar con el nombre de una función. Es como si le diéramos la primera palabra de una frase y esperáramos que la complete.
 
-## Función 2: arg_extract (build_argument_extraction_prompt)
+**Conceptos clave:**
 
-### ¿Qué hace?
+#### Acceder a atributos de objetos
+Un objeto `FunctionDefinition` tiene atributos: `name`, `description`, `parameters`, `returns`. Para acceder a ellos, usas el punto:
+```python
+function.name        # El nombre de la función
+function.description # La descripción de la función
+```
+
+#### f-strings
+Los f-strings son strings que pueden incluir variables:
+```python
+nombre = "fn_add_numbers"
+texto = f"- {nombre}: Add two numbers together"
+```
+
+#### Unir strings con saltos de línea
+Usa `"\n".join(lista)` para unir todos los strings de una lista con saltos de línea:
+```python
+funciones_texto = "\n".join(formated_func)
+```
+
+#### No es hardcodeado
+El modelo es el que decide qué función llamar, no nosotros. La decodificación restringida (que implementaremos después) es lo que garantiza que el modelo solo pueda elegir entre las funciones disponibles.
+
+---
+
+### 7.3. Implementar arg_extract
+
+**Qué hace:**
 Construye un texto que pregunta al modelo qué valor tiene un parámetro.
 
-### ¿Qué necesita?
+**Qué necesita:**
 1. La pregunta del usuario (ej: "What is the sum of 2 and 3?")
 2. La función elegida (ej: fn_add_numbers)
 3. El parámetro que quieres extraer (ej: "a")
 4. Los argumentos ya extraídos (ej: {"a": 2})
 
-### ¿Cómo funciona paso a paso?
-
+**Qué debe hacer:**
 1. **Explica qué función se va a usar** — Dile al modelo qué función ha elegido:
    ```
    "Function: fn_add_numbers - Add two numbers together and return their sum."
@@ -1173,7 +717,7 @@ Construye un texto que pregunta al modelo qué valor tiene un parámetro.
    "Value: "
    ```
 
-### El resultado final sería:
+**El resultado final sería:**
 ```
 Function: fn_add_numbers - Add two numbers together and return their sum.
 User request: What is the sum of 2 and 3?
@@ -1182,39 +726,14 @@ Extract parameter 'a' (type: number):
 Value: 
 ```
 
-### ¿Por qué termina con "Value: "?
+**¿Por qué termina con "Value: "?**
 Porque el modelo "quiere" continuar con el valor del parámetro. Es como si le diéramos la primera palabra de una frase y esperáramos que la complete.
-
-## Conceptos clave:
-
-### Acceder a atributos de objetos
-Un objeto `FunctionDefinition` tiene atributos: `name`, `description`, `parameters`, `returns`. Para acceder a ellos, usas el punto:
-```python
-function.name        # El nombre de la función
-function.description # La descripción de la función
-```
-
-### f-strings
-Los f-strings son strings que pueden incluir variables:
-```python
-nombre = "fn_add_numbers"
-texto = f"- {nombre}: Add two numbers together"
-```
-
-### Unir strings con saltos de línea
-Usa `"\n".join(lista)` para unir todos los strings de una lista con saltos de línea:
-```python
-funciones_texto = "\n".join(formated_func)
-```
-
-### No es hardcodeado
-El modelo es el que decide qué función llamar, no nosotros. La decodificación restringida (que implementaremos después) es lo que garantiza que el modelo solo pueda elegir entre las funciones disponibles.
 
 ---
 
-# LECCIÓN 19: CREAR vocab.py — La intención y el qué
+## LECCIÓN 8: Crear el vocabulario (vocab.py)
 
-## ¿Qué es un vocabulario?
+### 8.1. ¿Qué es un vocabulario?
 
 Imagina que tienes un diccionario gigante que dice:
 
@@ -1227,8 +746,7 @@ Imagina que tienes un diccionario gigante que dice:
 
 Esto es un **vocabulario**: un mapeo entre palabras (tokens) y números (IDs).
 
-## ¿Por qué lo necesitamos?
-
+**¿Por qué lo necesitamos?**
 El modelo solo entiende números. Cuando le pasas texto, lo convierte a números:
 
 ```
@@ -1237,8 +755,7 @@ El modelo solo entiende números. Cuando le pasas texto, lo convierte a números
 
 El modelo procesa estos números y devuelve puntuaciones para cada número posible. Pero nosotros queremos saber **qué palabra** corresponde a cada número. Para eso necesitamos el vocabulario.
 
-## ¿Cómo se usa en la decodificación restringida?
-
+**¿Cómo se usa en la decodificación restringida?**
 Imagina que quieres extraer un número. Solo quieres permitir tokens que son dígitos:
 
 ```
@@ -1250,17 +767,28 @@ Imagina que quieres extraer un número. Solo quieres permitir tokens que son dí
 
 Con el vocabulario, puedes buscar todos los tokens que son dígitos y obtener sus IDs. Después, puedes bloquear todos los demás tokens.
 
-## ¿Qué vamos a hacer en vocab.py?
-
-1. **Cargar el vocabulario** — Leer el archivo JSON y crear diccionarios de búsqueda
-2. **Detectar el formato** — El JSON puede ser `{"token": id}` o `{"id": token}`
-3. **Crear métodos de búsqueda** — Buscar tokens exactos, por prefijo, por caracteres
-
 ---
 
-# LECCIÓN 20: CREAR vocab.py — Cargar y detectar el formato
+### 8.2. Cargar el archivo vocab.json
 
-## Paso 1: Cargar el vocabulario
+**Qué hacer:**
+Carga el archivo vocab.json del modelo y construye diccionarios de búsqueda.
+
+**Qué necesita:**
+- La ruta al archivo vocab.json del modelo
+
+**Qué debe hacer:**
+- Cargar el archivo JSON
+- Detectar automáticamente el formato del archivo (clave = token o clave = ID)
+- Construir dos diccionarios: uno para buscar IDs a partir de tokens y otro para buscar tokens a partir de IDs
+
+**Por qué lo haces:**
+El archivo vocab.json puede tener 150.000 entradas. Necesitas una forma eficiente de buscar tokens e IDs.
+
+**Cómo debería funcionar:**
+Cuando creas un objeto VocabIndex, carga el archivo y construye los diccionarios. Después, puedas buscar tokens e IDs rápidamente.
+
+**Formato del archivo:**
 
 El `vocab.json` del modelo es un diccionario JSON. Puede tener dos formatos:
 
@@ -1274,7 +802,7 @@ El `vocab.json` del modelo es un diccionario JSON. Puede tener dos formatos:
 {"1284": "hola", "339": "mundo", "42": "{"}
 ```
 
-## Paso 2: Detectar el formato automáticamente
+**Detectar el formato automáticamente:**
 
 Para detectar el formato, puedes mirar la primera clave del diccionario:
 - Si la primera clave es un número → Formato B
@@ -1290,7 +818,7 @@ except (ValueError, TypeError):
     # No es un número → Formato A (clave = token, valor = ID)
 ```
 
-## Paso 3: Crear diccionarios de búsqueda
+**Crear diccionarios de búsqueda:**
 
 Necesitas dos diccionarios:
 1. **token → ID** — Para buscar el ID de un token
@@ -1308,21 +836,21 @@ self.id_to_token = data  # {"1284": "hola", "339": "mundo"}
 self.token_to_id = {v: k for k, v in data.items()}  # {"hola": 1284, "mundo": 339}
 ```
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Obtener la primera clave de un diccionario
+#### Obtener la primera clave de un diccionario
 Los diccionarios no se acceden con `[0]`. Para obtener la primera clave:
 ```python
 primera_clave = next(iter(diccionario.keys()))
 ```
 
-### Crear un diccionario invertido
+#### Crear un diccionario invertido
 Para invertir un diccionario (intercambiando claves y valores):
 ```python
 diccionario_invertido = {v: k for k, v in diccionario.items()}
 ```
 
-### try/except para detectar tipos
+#### try/except para detectar tipos
 Usa try/except para intentar convertir un valor a otro tipo:
 ```python
 try:
@@ -1334,13 +862,12 @@ except (ValueError, TypeError):
 
 ---
 
-# LECCIÓN 21: CREAR vocab.py — Método search_exact
+### 8.3. Implementar search_exact
 
-## ¿Qué hace?
-
+**Qué hace:**
 Busca un token exacto en el diccionario y devuelve su ID.
 
-## Ejemplo:
+**Ejemplo:**
 
 Si tienes:
 ```python
@@ -1349,23 +876,23 @@ self.token_to_id = {"hola": 1284, "mundo": 339}
 
 Y buscas `"hola"`, debería devolver `[1284]`.
 
-## ¿Cómo funciona paso a paso?
+**¿Cómo funciona paso a paso?**
 
 1. **Recibe un token** — Por ejemplo, `"hola"`
 2. **Busca el token en el diccionario** — Usa `.get(token)`
 3. **Si existe, devuelve el ID como lista** — `[token_id]`
 4. **Si no existe, devuelve una lista vacía** — `[]`
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Buscar en un diccionario
+#### Buscar en un diccionario
 Usa `.get()` para buscar un valor en un diccionario:
 ```python
 valor = diccionario.get(clave)
 # Si la clave no existe, devuelve None
 ```
 
-### Devolver listas
+#### Devolver listas
 Aunque solo haya un elemento, devuelve una lista para consistencia:
 ```python
 return [token_id]  # Si existe
@@ -1374,19 +901,18 @@ return []  # Si no existe
 
 ---
 
-# LECCIÓN 22: CREAR vocab.py — Método search_prefix
+### 8.4. Implementar search_prefix
 
-## ¿Qué hace?
-
+**Qué hace:**
 Busca todos los tokens que **empiezan por un prefijo** y devuelve sus IDs.
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 En la decodificación restringida, necesitas saber qué tokens son válidos en cada paso. Por ejemplo:
 - Para extraer un nombre de función, necesitas saber qué tokens empiezan por `"fn_"`
 - Para extraer un número, necesitas saber qué tokens son dígitos
 
-## Ejemplo concreto (no relacionado con el proyecto)
+**Ejemplo concreto (no relacionado con el proyecto)**
 
 Imagina que tienes un diccionario de palabras:
 
@@ -1402,7 +928,7 @@ Si buscas todas las palabras que empiezan por `"ca"`, el resultado debería ser:
 [1, 2]  # casa, coche
 ```
 
-## ¿Cómo funciona paso a paso?
+**¿Cómo funciona paso a paso?**
 
 1. **Recibe un prefijo** — Por ejemplo, `"ca"`
 2. **Itera sobre todos los tokens** del diccionario
@@ -1410,15 +936,15 @@ Si buscas todas las palabras que empiezan por `"ca"`, el resultado debería ser:
 4. **Si coincide, guarda el ID** — Añade el ID a una lista
 5. **Devuelve la lista de IDs** — Todos los IDs de tokens que empiezan por el prefijo
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Verificar si un string empieza por otro
+#### Verificar si un string empieza por otro
 Usa el método `.startswith()`:
 ```python
 token.startswith(prefijo)  # True o False
 ```
 
-### Iterar sobre un diccionario
+#### Iterar sobre un diccionario
 Usa `.items()` para obtener clave y valor:
 ```python
 for token, id in diccionario.items():
@@ -1427,19 +953,18 @@ for token, id in diccionario.items():
 
 ---
 
-# LECCIÓN 23: CREAR vocab.py — Método search_characters
+### 8.5. Implementar search_characters
 
-## ¿Qué hace?
-
+**Qué hace:**
 Busca todos los tokens que están **compuestos solo por ciertos caracteres** y devuelve sus IDs.
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 En la decodificación restringida, necesitas saber qué tokens son válidos en cada paso. Por ejemplo:
 - Para extraer un número, necesitas saber qué tokens son dígitos (`0-9`)
 - Para extraer un número con decimales, necesitas saber qué tokens son dígitos o el punto (`.`)
 
-## Ejemplo concreto (no relacionado con el proyecto)
+**Ejemplo concreto (no relacionado con el proyecto)**
 
 Imagina que tienes un diccionario de tokens:
 
@@ -1457,7 +982,7 @@ Si buscas todos los tokens compuestos solo por dígitos (`"0123456789"`), el res
 [10, 11, 12]  # "0", "1", "2"
 ```
 
-## ¿Cómo funciona paso a paso?
+**¿Cómo funciona paso a paso?**
 
 1. **Recibe un string de caracteres permitidos** — Por ejemplo, `"0123456789"`
 2. **Itera sobre todos los tokens** del diccionario
@@ -1465,9 +990,9 @@ Si buscas todos los tokens compuestos solo por dígitos (`"0123456789"`), el res
 4. **Si coincide, guarda el ID** — Añade el ID a una lista
 5. **Devuelve la lista de IDs** — Todos los IDs de tokens compuestos solo por esos caracteres
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Verificar si todos los caracteres están permitidos
+#### Verificar si todos los caracteres están permitidos
 Usa `all()` con un generador:
 ```python
 all(c in caracteres_permitidos for c in token)
@@ -1484,7 +1009,7 @@ caracteres_permitidos = "0123456789"
 all(c in caracteres_permitidos for c in token)  # False
 ```
 
-### Error común: `valid_chars in token`
+#### Error común: `valid_chars in token`
 **Incorrecto:**
 ```python
 if valid_chars in token:  # Verifica si el string completo está en el token
@@ -1497,28 +1022,29 @@ if all(c in valid_chars for c in token):  # Verifica si todos los caracteres del
 
 ---
 
-# LECCIÓN 24: CREAR constrained_decoder.py — get_next_token_logits
+## LECCIÓN 9: Crear el decodificador restringido (constrained_decoder.py)
 
-## ¿Qué hace?
+### 9.1. Implementar get_next_token_logits
 
+**Qué hace:**
 Pide al modelo las puntuaciones (logits) para el siguiente token.
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 El modelo devuelve puntuaciones para cada token del vocabulario. Necesitas estas puntuaciones para saber qué token es el más probable.
 
-## ¿Qué parámetros recibe?
+**¿Qué parámetros recibe?**
 
 1. **`model`** — El modelo (objeto Small_LLM_Model)
 2. **`input_ids`** — Una lista de IDs de tokens (el contexto actual)
 
-## ¿Qué debe hacer paso a paso?
+**¿Qué debe hacer paso a paso?**
 
 1. **Llamar al SDK** — Usa `model.get_logits_from_input_ids(input_ids)` para obtener los logits
 2. **Convertir a NumPy** — Usa `np.array(logits)` para convertir la lista a un array de NumPy
 3. **Devolver el array** — Retorna el array de NumPy
 
-## ¿De dónde salen los input_ids?
+**¿De dónde salen los input_ids?**
 
 Los `input_ids` vienen de **convertir texto a IDs** usando el método `encode` del SDK:
 
@@ -1528,19 +1054,19 @@ input_ids = model.encode(prompt)
 # Resultado: [[892, 318, 262, 4771, 286, 16, 290, 17, 30]]
 ```
 
-## Flujo completo:
+**Flujo completo:**
 
 ```
 prompt_builder.py → texto → model.encode() → input_ids → get_next_token_logits() → logits
 ```
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### encode vs get_logits_from_input_ids
+#### encode vs get_logits_from_input_ids
 - `encode(text)` — Convierte texto a IDs
 - `get_logits_from_input_ids(input_ids)` — Devuelve puntuaciones para el siguiente token
 
-### Convertir a NumPy
+#### Convertir a NumPy
 El SDK devuelve una lista de floats. Para trabajar con ella fácilmente, conviértela a un array de NumPy:
 ```python
 logits_array = np.array(logits)
@@ -1548,17 +1074,16 @@ logits_array = np.array(logits)
 
 ---
 
-# LECCIÓN 25: CREAR constrained_decoder.py — apply_mask
+### 9.2. Implementar apply_mask
 
-## ¿Qué hace?
-
+**Qué hace:**
 Pone **-infinito** a los tokens que no son válidos. Así el modelo no puede elegirlos nunca.
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 El modelo elige el token con la puntuación más alta. Si pones -infinito a los tokens inválidos, el modelo no puede elegirlos nunca.
 
-## Ejemplo concreto (no relacionado con el proyecto)
+**Ejemplo concreto (no relacionado con el proyecto)**
 
 Imagina que tienes puntuaciones para 5 tokens:
 
@@ -1582,33 +1107,33 @@ Token "2" → puntuación 4.0 (válido, se queda)
 
 Ahora el modelo solo puede elegir entre `0`, `1`, `2`.
 
-## ¿Qué parámetros recibe?
+**¿Qué parámetros recibe?**
 
 1. **`logits`** — Array de NumPy con las puntuaciones
 2. **`valid_ids`** — Lista de IDs válidos
 
-## ¿Qué debe hacer paso a paso?
+**¿Qué debe hacer paso a paso?**
 
 1. **Crear un array nuevo lleno de -infinito** — Todos los tokens empiezan bloqueados
 2. **Para cada ID válido, copiar su puntuación original** — Los tokens válidos se desbloquean
 3. **Devolver el array enmascarado**
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Crear un array lleno de -infinito
+#### Crear un array lleno de -infinito
 Usa `np.full()` para crear un array lleno de un valor:
 ```python
 masked = np.full(len(logits), -np.inf)
 ```
 
-### Copiar puntuaciones de tokens válidos
+#### Copiar puntuaciones de tokens válidos
 Itera sobre los IDs válidos y copia sus puntuaciones:
 ```python
 for valid_id in valid_ids:
     masked[valid_id] = logits[valid_id]
 ```
 
-### Error común: usar el índice incorrecto
+#### Error común: usar el índice incorrecto
 **Incorrecto:**
 ```python
 masked[valid_id] = logits[valid_ids]  # ❌ valid_ids es una lista
@@ -1621,17 +1146,16 @@ masked[valid_id] = logits[valid_id]  # ✅ valid_id es un número
 
 ---
 
-# LECCIÓN 26: CREAR constrained_decoder.py — select_best_token
+### 9.3. Implementar select_best_token
 
-## ¿Qué hace?
-
+**Qué hace:**
 Elige el token con la **puntuación más alta** del array enmascarado.
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 Después de aplicar la máscara, los tokens inválidos tienen -infinito. El modelo debe elegir el token con la puntuación más alta entre los válidos.
 
-## Ejemplo concreto (no relacionado con el proyecto)
+**Ejemplo concreto (no relacionado con el proyecto)**
 
 Imagina que tienes puntuaciones para 5 tokens:
 
@@ -1645,18 +1169,18 @@ Token "2" → puntuación 4.0
 
 La función debe devolver el ID del token con la puntuación más alta: `0` (puntuación 5.2).
 
-## ¿Qué parámetros recibe?
+**¿Qué parámetros recibe?**
 
 1. **`masked_logits`** — Array de NumPy con las puntuaciones enmascaradas
 
-## ¿Qué debe hacer paso a paso?
+**¿Qué debe hacer paso a paso?**
 
 1. **Encontrar el token con la puntuación más alta** — Usa `np.argmax()`
 2. **Devolver su ID** — El ID del token con la puntuación más alta
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### np.argmax()
+#### np.argmax()
 `np.argmax()` devuelve el **índice** del valor más alto en un array:
 ```python
 masked_logits = np.array([5.2, 3.1, -np.inf, -np.inf, 4.0])
@@ -1666,25 +1190,25 @@ best_token_id = np.argmax(masked_logits)
 
 ---
 
-# LECCIÓN 27: CREAR constrained_decoder.py — JSONGenerator
+### 9.4. Crear la clase JSONGenerator
 
-## ¿Qué es JSONGenerator?
+**Qué es JSONGenerator?**
 
 Es la clase que coordina todo el proceso de decodificación restringida. Usa las tres funciones que ya has creado (`get_next_token_logits`, `apply_mask`, `select_best_token`) para generar texto token a token, asegurándose de que solo se eligen tokens válidos.
 
-## ¿Qué métodos necesita?
+**¿Qué métodos necesita?**
 
 1. **`select_function_name`** — Elige el nombre de una función usando decodificación restringida
 2. **`extract_number`** — Extrae un número usando decodificación restringida
 3. **`extract_string`** — Extrae un string usando decodificación restringida
 4. **`extract_boolean`** — Extrae un boolean usando decodificación restringida
 
-## ¿Qué parámetros recibe el constructor?
+**¿Qué parámetros recibe el constructor?**
 
 1. **`model`** — El modelo (objeto Small_LLM_Model)
 2. **`vocab`** — El vocabulario (objeto VocabIndex)
 
-## ¿Qué hace el constructor?
+**¿Qué hace el constructor?**
 
 Guarda el modelo y el vocabulario como atributos de la clase:
 ```python
@@ -1693,7 +1217,7 @@ def __init__(self, model: Small_LLM_Model, vocab: VocabIndex):
     self.vocab = vocab
 ```
 
-## ¿Dónde se crea el vocabulario?
+**¿Dónde se crea el vocabulario?**
 
 El vocabulario se crea **fuera** de la clase y se pasa como parámetro:
 ```python
@@ -1703,16 +1227,16 @@ vocab = VocabIndex(vocab_path)
 generator = JSONGenerator(model, vocab)
 ```
 
-## ¿Por qué no crear el vocabulario dentro de la clase?
+**¿Por qué no crear el vocabulario dentro de la clase?**
 
 Porque:
 1. **Es más fácil de probar** — Puedes pasar un vocabulario falso en tests
 2. **Es más flexible** — Puedes cambiar el vocabulario sin cambiar la clase
 3. **Es más limpio** — La clase no necesita saber cómo se crea el vocabulario
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Métodos de una clase necesitan `self`
+#### Métodos de una clase necesitan `self`
 Todos los métodos de una clase necesitan `self` como primer parámetro:
 ```python
 def select_function_name(self, prompt_ids: list, function_list: list):
@@ -1720,7 +1244,7 @@ def select_function_name(self, prompt_ids: list, function_list: list):
     pass
 ```
 
-### No pasar model como parámetro si ya está en self
+#### No pasar model como parámetro si ya está en self
 **Incorrecto:**
 ```python
 def select_function_name(self, model: Small_LLM_Model, prompt_ids: list):
@@ -1733,7 +1257,7 @@ def select_function_name(self, prompt_ids: list):
     # Usa self.model
 ```
 
-### Llamar a funciones fuera de la clase
+#### Llamar a funciones fuera de la clase
 **Incorrecto:**
 ```python
 class JSONGenerator:
@@ -1759,24 +1283,23 @@ generator = JSONGenerator(model, vocab)
 
 ---
 
-# LECCIÓN 28: CREAR constrained_decoder.py — select_function_name
+### 9.5. Implementar select_function_name
 
-## ¿Qué hace?
-
+**Qué hace:**
 Elige el nombre de una función usando decodificación restringida. Compara todos los nombres de funciones disponibles y elige el que tiene la puntuación más alta.
 
-## ¿Qué parámetros recibe?
+**¿Qué parámetros recibe?**
 
 1. **`prompt_ids`** — Lista de IDs del prompt (el texto convertido a IDs)
 2. **`function_names`** — Lista de nombres de funciones disponibles (ej: ["fn_add_numbers", "fn_greet"])
 
-## ¿Cómo funciona paso a paso?
+**¿Cómo funciona paso a paso?**
 
 1. **Convierte cada nombre de función a IDs** — Usa `self.model.encode(function_name).flatten().tolist()`
 2. **Para cada nombre, calcula una puntuación** — Usa `get_next_token_logits` y sumar los logits de cada token
 3. **Elige el nombre con la puntuación más alta** — El nombre más probable
 
-## Ejemplo concreto (no relacionado con el proyecto):
+**Ejemplo concreto (no relacionado con el proyecto):**
 
 Imagina que tienes dos funciones:
 - `sumar` → IDs [1, 2, 3]
@@ -1791,16 +1314,16 @@ restar: 0.3 + 0.2 + 0.1 = 0.6
 
 La función con la puntuación más alta es `sumar`.
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Convertir texto a IDs
+#### Convertir texto a IDs
 Usa `model.encode(text).flatten().tolist()` para obtener una lista de IDs:
 ```python
 tensor_ids = self.model.encode(fun_name)
 ids = tensor_ids.flatten().tolist()
 ```
 
-### Calcular la puntuación total de una secuencia
+#### Calcular la puntuación total de una secuencia
 Suma los logits de cada token:
 ```python
 score = 0
@@ -1808,7 +1331,7 @@ for token_id in ids:
     score += logits[token_id]
 ```
 
-### Elegir el nombre con la puntuación más alta
+#### Elegir el nombre con la puntuación más alta
 Compara las puntuaciones y devuelve el nombre con la puntuación más alta:
 ```python
 best_name = max(scores, key=scores.get)
@@ -1816,21 +1339,20 @@ best_name = max(scores, key=scores.get)
 
 ---
 
-# LECCIÓN 29: CREAR constrained_decoder.py — extract_number
+### 9.6. Implementar extract_number
 
-## ¿Qué hace?
-
+**Qué hace:**
 Extrae un número usando decodificación restringida. El modelo genera el número token a token, y en cada paso solo puede elegir tokens válidos (dígitos, punto decimal, signo negativo).
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 Los números son uno de los tipos de datos más comunes en las funciones. Sin esta función, el programa no puede extraer números de las preguntas.
 
-## ¿Qué parámetros recibe?
+**¿Qué parámetros recibe?**
 
 1. **`prompt_ids`** — Lista de IDs del prompt (el texto convertido a IDs)
 
-## ¿Qué variables locales necesita?
+**¿Qué variables locales necesita?**
 
 1. **`digits`** — IDs de tokens que son dígitos (0-9)
 2. **`dot`** — IDs de tokens que son punto decimal
@@ -1839,7 +1361,7 @@ Los números son uno de los tipos de datos más comunes en las funciones. Sin es
 5. **`valid_ids`** — Lista combinada de todos los tokens válidos
 6. **`tokens`** — Lista vacía para acumular los tokens generados
 
-## ¿Cómo funciona paso a paso?
+**¿Cómo funciona paso a paso?**
 
 1. **Buscar tokens válidos** — Usa `self.vocab.search_characters()` para encontrar dígitos, punto, signo y terminadores
 2. **Combinar tokens válidos** — Crea `valid_ids` combinando todas las listas
@@ -1853,7 +1375,7 @@ Los números son uno de los tipos de datos más comunes en las funciones. Sin es
 5. **Decodear tokens** — Convertir los IDs a un string
 6. **Convertir a float** — Devolver el número como float
 
-## Flujo de datos:
+**Flujo de datos:**
 
 ```
 prompt_ids → get_next_token_logits → logits
@@ -1863,21 +1385,18 @@ selected → ¿es terminador? → sí: parar / no: acumular y actualizar prompt_
 tokens → decode → string → float → return
 ```
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### ¿Por qué incluir terminadores en valid_ids?
-
+#### ¿Por qué incluir terminadores en valid_ids?
 Porque el modelo **debe poder generarlos**. Si no los incluyes, el modelo nunca podría terminar y el bucle sería infinito.
 
-### ¿Por qué actualizar prompt_ids?
-
+#### ¿Por qué actualizar prompt_ids?
 Porque el modelo necesita saber qué tokens ya ha generado para predecir el siguiente token correctamente.
 
-### ¿Por qué decodear los tokens?
-
+#### ¿Por qué decodear los tokens?
 Porque los tokens son IDs numéricos, no strings. Necesitas convertirlos a texto antes de convertir a float.
 
-## Errores comunes:
+**Errores comunes:**
 
 1. **`valid_ids` no definido** — No creaste la lista antes de usarla
 2. **`valid_ids` sin terminadores** — El modelo no podría terminar
@@ -1886,17 +1405,17 @@ Porque los tokens son IDs numéricos, no strings. Necesitas convertirlos a texto
 
 ---
 
-# LECCIÓN 30: Máquina de estados (FSM)
+### 9.7. Máquina de estados (FSM)
 
-## ¿Qué es una máquina de estados?
+**¿Qué es una máquina de estados?**
 
 Es una forma de saber **en qué estado estamos** y **qué tokens son válidos** en cada estado.
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 Sin la máquina de estados, no sabrías qué tokens son válidos en cada paso. Por ejemplo, después de un punto decimal, solo pueden venir dígitos, no letras.
 
-## Ejemplo concreto (no relacionado con el proyecto):
+**Ejemplo concreto (no relacionado con el proyecto):**
 
 Imagina que estás extrayendo un número. La máquina de estados sería:
 
@@ -1918,7 +1437,7 @@ Estado 3: Esperando dígito (después de ".")
   → Si es terminador: terminar
 ```
 
-## ¿Cómo se implementa en Python?
+**¿Cómo se implementa en Python?**
 
 Usa un bucle `while` con un `break` cuando se encuentre un terminador:
 
@@ -1932,36 +1451,35 @@ while True:
 
 ---
 
-# LECCIÓN 31: CREAR constrained_decoder.py — extract_string
+### 9.8. Implementar extract_string
 
-## ¿Qué hace?
-
+**Qué hace:**
 Extrae un string usando decodificación restringida. El modelo genera el string token a token, y en cada paso solo puede elegir tokens válidos.
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 Los strings son uno de los tipos de datos más comunes en las funciones. Sin esta función, el programa no puede extraer strings de las preguntas.
 
-## ¿Qué parámetros recibe?
+**¿Qué parámetros recibe?**
 
 1. **`prompt_ids`** — Lista de IDs del prompt (el texto convertido a IDs)
 
-## ¿Qué variables locales necesita?
+**¿Qué variables locales necesita?**
 
 1. **`terminators`** — IDs de tokens que indican el fin del string (`"`, `\n`)
 2. **`not_valids`** — IDs de tokens que contienen caracteres que rompen JSON (`{`, `}`, `[`, `]`)
 3. **`valid_ids`** — Lista de IDs de tokens válidos (todos excepto los que rompen JSON)
 4. **`tokens`** — Lista vacía para acumular los tokens generados
 
-## ¿Qué tokens rompen la estructura JSON?
+**¿Qué tokens rompen la estructura JSON?**
 
 Los tokens que contienen `{`, `}`, `[`, `]` rompen la estructura JSON. El modelo no debe poder generarlos mientras extrae un string.
 
-## ¿Qué tokens son terminadores?
+**¿Qué tokens son terminadores?**
 
 Los tokens que indican el fin del string son `"` (comillas) y `\n` (salto de línea).
 
-## ¿Cómo funciona paso a paso?
+**¿Cómo funciona paso a paso?**
 
 1. **Buscar tokens terminadores** — Usa `self.vocab.search_characters('"\n')`
 2. **Buscar tokens válidos** — Todos los tokens que no contienen `{`, `}`, `[`, `]`
@@ -1975,7 +1493,7 @@ Los tokens que indican el fin del string son `"` (comillas) y `\n` (salto de lí
 5. **Decodear tokens** — Convertir los IDs a un string
 6. **Devolver el string**
 
-## Flujo de datos:
+**Flujo de datos:**
 
 ```
 prompt_ids → get_next_token_logits → logits
@@ -1985,9 +1503,9 @@ selected → ¿es terminador? → sí: parar / no: acumular y actualizar prompt_
 tokens → decode → string → return
 ```
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Buscar tokens que no contienen ciertos caracteres
+#### Buscar tokens que no contienen ciertos caracteres
 
 Itera sobre el vocabulario y verifica si el token contiene caracteres inválidos:
 
@@ -1997,8 +1515,7 @@ for token, token_id in self.vocab.token_to_id.items():
         valid_ids.append(token_id)
 ```
 
-### Error común: search_characters con múltiples argumentos
-
+#### Error común: search_characters con múltiples argumentos
 **Incorrecto:**
 ```python
 not_valids = self.vocab.search_characters("{", "}", "[", "]")  # ❌
@@ -2009,7 +1526,7 @@ not_valids = self.vocab.search_characters("{", "}", "[", "]")  # ❌
 not_valids = self.vocab.search_characters("{}[]")  # ✅
 ```
 
-### Error común: usar id_to_token en vez de token_to_id
+#### Error común: usar id_to_token en vez de token_to_id
 
 **Incorrecto:**
 ```python
@@ -2023,27 +1540,26 @@ for token, token_id in self.vocab.token_to_id.items():  # ✅ token_to_id mapea 
 
 ---
 
-# LECCIÓN 32: CREAR constrained_decoder.py — extract_boolean
+### 9.9. Implementar extract_boolean
 
-## ¿Qué hace?
-
+**Qué hace:**
 Extrae un boolean (`true` o `false`) usando decodificación restringida.
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 Los booleans son un tipo de datos común en las funciones. Sin esta función, el programa no puede extraer booleans de las preguntas.
 
-## ¿Qué parámetros recibe?
+**¿Qué parámetros recibe?**
 
 1. **`prompt_ids`** — Lista de IDs del prompt (el texto convertido a IDs)
 
-## ¿Qué variables locales necesita?
+**¿Qué variables locales necesita?**
 
 1. **`true_id`** — IDs del token `true`
 2. **`false_id`** — IDs del token `false`
 3. **`valid_ids`** — Lista combinada de `true_id` y `false_id`
 
-## ¿Cómo funciona paso a paso?
+**¿Cómo funciona paso a paso?**
 
 1. **Buscar los IDs de `true` y `false`** — Usa `self.vocab.search_exact("true")` y `self.vocab.search_exact("false")`
 2. **Combinar en `valid_ids`** — `valid_ids = true_id + false_id`
@@ -2052,9 +1568,9 @@ Los booleans son un tipo de datos común en las funciones. Sin esta función, el
 5. **Elegir token** — `select_best_token(masked)`
 6. **Devolver boolean** — `return selected in true_id`
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### Buscar tokens exactos
+#### Buscar tokens exactos
 
 Usa `search_exact()` para buscar un token exacto:
 
@@ -2063,7 +1579,7 @@ true_id = self.vocab.search_exact("true")
 false_id = self.vocab.search_exact("false")
 ```
 
-### Error común: search_characters en vez de search_exact
+#### Error común: search_characters en vez de search_exact
 
 **Incorrecto:**
 ```python
@@ -2075,7 +1591,7 @@ true_id = self.vocab.search_characters("true")  # ❌ Busca tokens compuestos so
 true_id = self.vocab.search_exact("true")  # ✅ Busca el token exacto "true"
 ```
 
-### Comparar puntuaciones
+#### Comparar puntuaciones
 
 Para saber si `true` o `false` tiene mayor puntuación, usa `select_best_token` y verifica cuál fue elegido:
 
@@ -2086,86 +1602,17 @@ return selected in true_id  # True si se eligió "true", False si se eligió "fa
 
 ---
 
-# PASOS LÓGICOS DEL PROYECTO
+## LECCIÓN 10: Crear el orquestador (function_caller.py)
 
-## Paso 1: Preparar el entorno
-
-1. Crear la estructura de carpetas
-2. Crear `pyproject.toml` con dependencias
-3. Crear `Makefile` con atajos
-4. Copiar `llm_sdk` en la raíz
-5. Crear archivos de datos de entrada
-
-## Paso 2: Crear los modelos de datos (models.py)
-
-1. Crear `ParameterDefinition` — Define un parámetro de función
-2. Crear `FunctionDefinition` — Define una función completa
-3. Crear `FunctionCall` — Define el resultado final
-4. Crear `TestPrompt` — Define un prompt de prueba
-
-## Paso 3: Crear las herramientas de entrada/salida (tools.py)
-
-1. Crear `json_reader` — Lee archivos JSON
-2. Crear `load_function_def` — Carga y valida funciones
-3. Crear `load_prompt` — Carga prompts de prueba
-4. Crear `json_exporter` — Escribe resultados en JSON
-
-## Paso 4: Crear el constructor de prompts (prompt_builder.py)
-
-1. Crear `function_selection` — Construye prompt para elegir función
-2. Crear `arg_extract` — Construye prompt para extraer argumentos
-
-## Paso 5: Crear el vocabulario (vocab.py)
-
-1. Crear `VocabIndex` — Carga el vocabulario
-2. Crear `search_exact` — Busca tokens exactos
-3. Crear `search_prefix` — Busca tokens por prefijo
-4. Crear `search_characters` — Busca tokens por caracteres
-
-## Paso 6: Crear el decodificador restringido (constrained_decoder.py)
-
-1. Crear `get_next_token_logits` — Obtiene logits del modelo
-2. Crear `apply_mask` — Aplica máscara a los logits
-3. Crear `select_best_token` — Elige el token con la puntuación más alta
-4. Crear `JSONGenerator` — Clase que coordina todo
-5. Crear `select_function_name` — Elige el nombre de una función
-6. Crear `extract_number` — Extrae un número
-7. Crear `extract_string` — Extrae un string
-8. Crear `extract_boolean` — Extrae un boolean
-
-## Paso 7: Crear el orquestador (function_caller.py)
-
-1. Crear `FunctionCaller` — Clase que coordina todo
-2. Crear `resolve` — Dada una pregunta, elige función y extrae argumentos
-
-## Paso 8: Actualizar el punto de entrada (__main__.py)
-
-1. Importar todas las funciones y clases necesarias
-2. Cargar archivos de entrada
-3. Cargar el modelo
-4. Crear el FunctionCaller
-5. Procesar cada prompt
-6. Escribir resultados
-
-## Paso 9: Probar y depurar
-
-1. Ejecutar el programa
-2. Comprobar los resultados
-3. Depurar errores
-
----
-
-# LECCIÓN 33: CREAR function_caller.py — Explicación completa
-
-## ¿Qué es FunctionCaller?
+### 10.1. ¿Qué es FunctionCaller?
 
 Es el **orquestador** que coordina todo el proceso. Es como el director de orquesta: no toca ningún instrumento, pero sabe cuándo debe entrar cada uno.
 
-## ¿Por qué es importante?
+**¿Por qué es importante?**
 
 Sin FunctionCaller, los otros módulos (prompt_builder, constrained_decoder, tools) no pueden trabajar juntos. FunctionCaller es el que los une y hace que funcionen como un equipo.
 
-## ¿Qué hace el constructor?
+**¿Qué hace el constructor?**
 
 1. **Recibe el modelo** — Lo guarda como `self.model`
 2. **Crea el vocabulario** — Usa `VocabIndex` con la ruta del modelo
@@ -2179,7 +1626,19 @@ def __init__(self, model: Small_LLM_Model):
     self.generator = JSONGenerator(model, self.vocab)
 ```
 
-## ¿Qué hace resolve?
+---
+
+### 10.2. Implementar resolve
+
+**Qué hace:**
+Dada una pregunta y una lista de funciones, elige la función más apropiada y extrae los argumentos.
+
+**¿Qué parámetros recibe?**
+
+1. **`prompt`** — La pregunta del usuario (string)
+2. **`functions_list`** — La lista de funciones disponibles (lista de FunctionDefinition)
+
+**¿Qué debe hacer paso a paso?**
 
 1. **Construir prompt de selección** — Usa `function_selection(prompt, functions_list)`
 2. **Convertir prompt a IDs** — Usa `self.model.encode(prompt_txt).flatten().tolist()`
@@ -2191,7 +1650,7 @@ def __init__(self, model: Small_LLM_Model):
    - Guardar el valor en `extracted_args`
 5. **Ensamblar resultado** — Crea un `FunctionCall` con la pregunta, función y argumentos
 
-## Flujo de datos completo:
+**Flujo de datos completo:**
 
 ```
 prompt (str)
@@ -2215,7 +1674,7 @@ for param_name, param_def in sel_funct.parameters.items():
 FunctionCall(prompt=prompt, fn_name=sel_funct.name, args=extracted_args)
 ```
 
-## De dónde viene cada dato:
+**De dónde viene cada dato:**
 
 | Dato | De dónde viene |
 |------|----------------|
@@ -2231,29 +1690,29 @@ FunctionCall(prompt=prompt, fn_name=sel_funct.name, args=extracted_args)
 | `extracted_args` | Diccionario que acumula los valores extraídos |
 | `FunctionCall` | El resultado final con prompt, fn_name y args |
 
-## Conceptos clave:
+**Conceptos clave:**
 
-### FunctionCaller es el orquestador
+#### FunctionCaller es el orquestador
 
 No hace nada por sí solo. Solo coordina los otros módulos:
 - **prompt_builder** — Construye los prompts
 - **constrained_decoder** — Genera las respuestas
 - **tools** — Lee y escribe archivos
 
-### El flujo es secuencial
+#### El flujo es secuencial
 
 1. Primero se elige la función
 2. Después se extraen los argumentos uno por uno
 3. Finalmente se ensambla el resultado
 
-### Los datos fluyen en una dirección
+#### Los datos fluyen en una dirección
 
 Los datos fluyen de arriba a abajo:
 - Entrada: `prompt` y `functions_list`
 - Proceso: prompts → IDs → función → argumentos
 - Salida: `FunctionCall`
 
-## Errores comunes:
+**Errores comunes:**
 
 1. **No guardar los valores extraídos** — `extracted_args[param_name] = value` debe estar dentro del bucle
 2. **Usar el prompt equivocado** — Usa `prompt` (la pregunta original), no `prompt_txt` (el prompt de selección)
@@ -2261,17 +1720,122 @@ Los datos fluyen de arriba a abajo:
 
 ---
 
-# RESUMEN DE LAS FASES
+## LECCIÓN 11: Crear el punto de entrada (__main__.py)
 
-1. **Fase 0**: Preparar el entorno (carpetas, pyproject.toml, Makefile, llm_sdk, datos)
-2. **Fase 1**: Crear los modelos de datos (models.py)
-3. **Fase 2**: Crear el vocabulario (vocab.py)
-4. **Fase 3**: Crear el decodificador restringido (constrained_decoder.py)
-5. **Fase 4**: Crear el constructor de prompts (prompt_builder.py)
-6. **Fase 5**: Crear el orquestador (function_caller.py)
-7. **Fase 6**: Crear las herramientas de entrada/salida (tools.py)
-8. **Fase 7**: Crear el punto de entrada (__main__.py)
-9. **Fase 8**: Probar y depurar
+### 11.1. Implementar parse_args
+
+**Qué hace:**
+Define los argumentos que acepta el programa desde la línea de comandos.
+
+**¿Qué necesita?**
+- Ninguno (usa argparse de la librería estándar)
+
+**¿Qué debe hacer?**
+- Definir el argumento `--input` (directorio de entrada)
+- Definir el argumento `--output` (archivo de salida)
+- Devolver los argumentos parseados
+
+**Por qué lo haces:**
+El programa necesita saber dónde están los archivos de entrada y dónde guardar los resultados.
+
+**Cómo debería funcionar:**
+Cuando ejecutas el programa con `--input` y `--output`, el programa usa esas rutas.
+
+---
+
+### 11.2. Implementar main
+
+**Qué hace:**
+La función principal que coordina todo el proceso.
+
+**¿Qué necesita?**
+- Los argumentos parseados
+- Las rutas a los archivos de entrada y salida
+
+**¿Qué debe hacer?**
+1. Parsear los argumentos
+2. Cargar los archivos de entrada
+3. Cargar el modelo
+4. Crear el FunctionCaller
+5. Para cada prompt, llamar a caller.resolve()
+6. Escribir los resultados
+7. Mostrar un resumen
+
+**Por qué lo haces:**
+Esta función es el punto de entrada del programa. Cuando la llamas, todo el sistema se pone en marcha.
+
+**Cómo debería funcionar:**
+Cuando ejecutas el programa, procesa todas las preguntas y genera un archivo JSON con los resultados.
+
+---
+
+### 11.3. Añadir el bloque if __name__ == "__main__"
+
+**Qué hace:**
+Añade el bloque estándar de Python que ejecuta main() cuando el archivo se ejecuta directamente.
+
+**¿Qué necesita?**
+- Ninguno
+
+**¿Qué debe hacer?**
+- Verificar si el archivo se ejecuta directamente
+- Si es así, ejecutar main() y salir con el código de retorno
+
+**Por qué lo haces:**
+Este bloque es estándar en Python. Significa: "Si este archivo se ejecuta directamente (no importado), ejecuta main()".
+
+**Cómo debería funcionar:**
+Cuando ejecutas `python -m src`, el programa ejecuta main() y devuelve un código de salida (0 = éxito, 1 = error).
+
+---
+
+## LECCIÓN 12: Ejecutar y depurar el programa
+
+### 12.1. Ejecutar el programa
+
+**Qué hacer:**
+Ejecuta el programa con `make run` o `uv run python -m src`.
+
+**Cómo hacerlo:**
+Escribe el comando en la terminal.
+
+**Por qué lo haces:**
+Necesitas comprobar que el programa funciona correctamente.
+
+**Cómo debería funcionar:**
+El programa debería cargar el modelo, procesar todas las preguntas y generar un archivo JSON con los resultados.
+
+---
+
+### 12.2. Comprobar los resultados
+
+**Qué hacer:**
+Abre el archivo de salida y comprueba que los resultados son correctos.
+
+**Cómo hacerlo:**
+Abre `data/output/function_calling_results.json` y revisa cada resultado.
+
+**Por qué lo haces:**
+Necesitas comprobar que el programa ha elegido las funciones correctas y ha extraído los argumentos correctos.
+
+**Cómo debería funcionar:**
+Cada resultado debería tener un prompt, un fn_name y un args con los valores correctos.
+
+---
+
+### 12.3. Depurar errores
+
+**Qué hacer:**
+Si hay errores, usa `make debug` para ejecutar el programa en modo depuración.
+
+**Cómo hacerlo:**
+Escribe `make debug` en la terminal.
+
+**Por qué lo haces:**
+El modo depuración te permite ejecutar el programa paso a paso y ver dónde está el error.
+
+**Cómo debería funcionar:**
+El programa se detendrá en el error y podrás ver los valores de las variables.
 
 ---
 
