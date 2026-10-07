@@ -1816,6 +1816,122 @@ best_name = max(scores, key=scores.get)
 
 ---
 
+# LECCIÓN 29: CREAR constrained_decoder.py — extract_number
+
+## ¿Qué hace?
+
+Extrae un número usando decodificación restringida. El modelo genera el número token a token, y en cada paso solo puede elegir tokens válidos (dígitos, punto decimal, signo negativo).
+
+## ¿Por qué es importante?
+
+Los números son uno de los tipos de datos más comunes en las funciones. Sin esta función, el programa no puede extraer números de las preguntas.
+
+## ¿Qué parámetros recibe?
+
+1. **`prompt_ids`** — Lista de IDs del prompt (el texto convertido a IDs)
+
+## ¿Qué variables locales necesita?
+
+1. **`digits`** — IDs de tokens que son dígitos (0-9)
+2. **`dot`** — IDs de tokens que son punto decimal
+3. **`minus`** — IDs de tokens que son signo negativo
+4. **`terminators`** — IDs de tokens que indican el fin del número
+5. **`valid_ids`** — Lista combinada de todos los tokens válidos
+6. **`tokens`** — Lista vacía para acumular los tokens generados
+
+## ¿Cómo funciona paso a paso?
+
+1. **Buscar tokens válidos** — Usa `self.vocab.search_characters()` para encontrar dígitos, punto, signo y terminadores
+2. **Combinar tokens válidos** — Crea `valid_ids` combinando todas las listas
+3. **Crear una lista vacía** — `tokens = []` para acumular los tokens generados
+4. **Bucle principal:**
+   - Obtener logits del modelo
+   - Aplicar máscara (solo tokens válidos)
+   - Elegir el token con la puntuación más alta
+   - Si es terminador → parar
+   - Si no → acumular y actualizar prompt_ids
+5. **Decodear tokens** — Convertir los IDs a un string
+6. **Convertir a float** — Devolver el número como float
+
+## Flujo de datos:
+
+```
+prompt_ids → get_next_token_logits → logits
+logits → apply_mask → masked
+masked → select_best_token → selected
+selected → ¿es terminador? → sí: parar / no: acumular y actualizar prompt_ids
+tokens → decode → string → float → return
+```
+
+## Conceptos clave:
+
+### ¿Por qué incluir terminadores en valid_ids?
+
+Porque el modelo **debe poder generarlos**. Si no los incluyes, el modelo nunca podría terminar y el bucle sería infinito.
+
+### ¿Por qué actualizar prompt_ids?
+
+Porque el modelo necesita saber qué tokens ya ha generado para predecir el siguiente token correctamente.
+
+### ¿Por qué decodear los tokens?
+
+Porque los tokens son IDs numéricos, no strings. Necesitas convertirlos a texto antes de convertir a float.
+
+## Errores comunes:
+
+1. **`valid_ids` no definido** — No creaste la lista antes de usarla
+2. **`valid_ids` sin terminadores** — El modelo no podría terminar
+3. **No actualizar prompt_ids** — El modelo no sabría qué tokens ya ha generado
+4. **No decodear tokens** — Los IDs numéricos no se pueden convertir a float directamente
+
+---
+
+# LECCIÓN 30: Máquina de estados (FSM)
+
+## ¿Qué es una máquina de estados?
+
+Es una forma de saber **en qué estado estamos** y **qué tokens son válidos** en cada estado.
+
+## ¿Por qué es importante?
+
+Sin la máquina de estados, no sabrías qué tokens son válidos en cada paso. Por ejemplo, después de un punto decimal, solo pueden venir dígitos, no letras.
+
+## Ejemplo concreto (no relacionado con el proyecto):
+
+Imagina que estás extrayendo un número. La máquina de estados sería:
+
+```
+Estado 0: Esperando dígito o signo negativo
+  → Si es dígitos: pasar al estado 1
+  → Si es "-": pasar al estado 2
+
+Estado 1: Esperando dígito, punto o terminador
+  → Si es dígitos: quedarse en estado 1
+  → Si es ".": pasar al estado 3
+  → Si es terminador: terminar
+
+Estado 2: Esperando dígito (después de "-")
+  → Si es dígitos: pasar al estado 1
+
+Estado 3: Esperando dígito (después de ".")
+  → Si es dígitos: quedarse en estado 3
+  → Si es terminador: terminar
+```
+
+## ¿Cómo se implementa en Python?
+
+Usa un bucle `while` con un `break` cuando se encuentre un terminador:
+
+```python
+while True:
+    # Obtener logits, aplicar máscara, elegir token
+    if token_es_terminador:
+        break
+    # Acumular token y actualizar estado
+```
+
+---
+
 # RESUMEN DE LAS FASES
 
 1. **Fase 0**: Preparar el entorno (carpetas, pyproject.toml, Makefile, llm_sdk, datos)

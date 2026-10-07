@@ -63,7 +63,8 @@ class JSONGenerator:
         return float(number_str)
 
     def extract_string(self):
-        ...
+        invalid_chars = self.vocab.search_characters("{", "}", "[", "]")
+        terminators = ""
 
     def extract_boolean(self):
         ...
