@@ -32,13 +32,35 @@ class JSONGenerator:
         self.vocab = vocab
 
     def select_function_name(self, prompt_ids: list, function_list: list):
+
+        scores = {}
         for fun_name in function_list:
             tensor_ids = self.model.encode(fun_name).flatten().tolist()
-            get_next_token_logits(tensor_ids)
+            fun_scores = get_next_token_logits(self.model, prompt_ids)
+            scores[fun_name] = sum(fun_scores[token_id] for token_id in tensor_ids)
 
+        return max(scores, key=scores.get)
 
-    def extract_number(self):
-        ...
+    def extract_number(self, prompt_ids: list):
+
+        digits = self.vocab.search_characters("0123456789")
+        dot = self.vocab.search_characters(".")
+        minus = self.vocab.search_characters("-")
+        terminators = self.vocab.search_characters(" ,\n\t")
+        valid_ids = digits + dot + minus + terminators
+        tokens = []
+
+        while True:
+            logits = get_next_token_logits(self.model, prompt_ids)
+            masked = apply_mask(logits, valid_ids)
+            selected = select_best_token(masked)
+            if selected in terminators:
+                break
+            tokens.append(selected)
+            prompt_ids.append(selected)
+        number_str = self.model.decode(tokens)
+
+        return float(number_str)
 
     def extract_string(self):
         ...

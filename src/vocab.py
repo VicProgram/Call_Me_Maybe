@@ -19,13 +19,10 @@ class VocabIndex:
 
         return data
 
-   
     def create_dict(self, data: dict) -> None:
 
-        # if key_type:
         self.token_to_id = data
         self.id_to_token = {v: k for k, v in data.items()}
-
 
     def search_exact(self, token: str) -> list[int]:
 
