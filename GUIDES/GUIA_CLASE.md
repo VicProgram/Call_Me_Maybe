@@ -2155,6 +2155,112 @@ return selected in true_id  # True si se eligió "true", False si se eligió "fa
 
 ---
 
+# LECCIÓN 33: CREAR function_caller.py — Explicación completa
+
+## ¿Qué es FunctionCaller?
+
+Es el **orquestador** que coordina todo el proceso. Es como el director de orquesta: no toca ningún instrumento, pero sabe cuándo debe entrar cada uno.
+
+## ¿Por qué es importante?
+
+Sin FunctionCaller, los otros módulos (prompt_builder, constrained_decoder, tools) no pueden trabajar juntos. FunctionCaller es el que los une y hace que funcionen como un equipo.
+
+## ¿Qué hace el constructor?
+
+1. **Recibe el modelo** — Lo guarda como `self.model`
+2. **Crea el vocabulario** — Usa `VocabIndex` con la ruta del modelo
+3. **Crea el generador** — Usa `JSONGenerator` con el modelo y el vocabulario
+
+```python
+def __init__(self, model: Small_LLM_Model):
+    self.model = model
+    vocab_path = model.get_path_to_vocab_file()
+    self.vocab = VocabIndex(vocab_path)
+    self.generator = JSONGenerator(model, self.vocab)
+```
+
+## ¿Qué hace resolve?
+
+1. **Construir prompt de selección** — Usa `function_selection(prompt, functions_list)`
+2. **Convertir prompt a IDs** — Usa `self.model.encode(prompt_txt).flatten().tolist()`
+3. **Elegir función** — Usa `self.generator.select_function_name(prompt_ids, funct_names)`
+4. **Para cada parámetro:**
+   - Construir prompt de extracción con `arg_extract`
+   - Convertir prompt a IDs
+   - Extraer valor según el tipo (number, string, boolean)
+   - Guardar el valor en `extracted_args`
+5. **Ensamblar resultado** — Crea un `FunctionCall` con la pregunta, función y argumentos
+
+## Flujo de datos completo:
+
+```
+prompt (str)
+    ↓
+function_selection(prompt, functions_list) → prompt_txt (str)
+    ↓
+model.encode(prompt_txt) → prompt_ids (list[int])
+    ↓
+generator.select_function_name(prompt_ids, funct_names) → sel_funct (FunctionDefinition)
+    ↓
+for param_name, param_def in sel_funct.parameters.items():
+    ↓
+    arg_extract(sel_funct, prompt, param_name, extracted_args) → arg_prompt (str)
+    ↓
+    model.encode(arg_prompt) → arg_prompt_ids (list[int])
+    ↓
+    generator.extract_number/string/boolean(arg_prompt_ids) → value
+    ↓
+    extracted_args[param_name] = value
+    ↓
+FunctionCall(prompt=prompt, fn_name=sel_funct.name, args=extracted_args)
+```
+
+## De dónde viene cada dato:
+
+| Dato | De dónde viene |
+|------|----------------|
+| `prompt` | La pregunta del usuario (string) |
+| `functions_list` | El archivo `function_definitions.json` (lista de FunctionDefinition) |
+| `prompt_txt` | `function_selection()` (string) |
+| `prompt_ids` | `model.encode()` (lista de IDs) |
+| `funct_names` | `fun.name` de cada FunctionDefinition (lista de strings) |
+| `sel_funct` | `generator.select_function_name()` (FunctionDefinition) |
+| `arg_prompt` | `arg_extract()` (string) |
+| `arg_prompt_ids` | `model.encode()` (lista de IDs) |
+| `value` | `generator.extract_number/string/boolean()` (float, string, boolean) |
+| `extracted_args` | Diccionario que acumula los valores extraídos |
+| `FunctionCall` | El resultado final con prompt, fn_name y args |
+
+## Conceptos clave:
+
+### FunctionCaller es el orquestador
+
+No hace nada por sí solo. Solo coordina los otros módulos:
+- **prompt_builder** — Construye los prompts
+- **constrained_decoder** — Genera las respuestas
+- **tools** — Lee y escribe archivos
+
+### El flujo es secuencial
+
+1. Primero se elige la función
+2. Después se extraen los argumentos uno por uno
+3. Finalmente se ensambla el resultado
+
+### Los datos fluyen en una dirección
+
+Los datos fluyen de arriba a abajo:
+- Entrada: `prompt` y `functions_list`
+- Proceso: prompts → IDs → función → argumentos
+- Salida: `FunctionCall`
+
+## Errores comunes:
+
+1. **No guardar los valores extraídos** — `extracted_args[param_name] = value` debe estar dentro del bucle
+2. **Usar el prompt equivocado** — Usa `prompt` (la pregunta original), no `prompt_txt` (el prompt de selección)
+3. **No manejar tipos desconocidos** — Añade un `else: value = None` para tipos no reconocidos
+
+---
+
 # RESUMEN DE LAS FASES
 
 1. **Fase 0**: Preparar el entorno (carpetas, pyproject.toml, Makefile, llm_sdk, datos)
