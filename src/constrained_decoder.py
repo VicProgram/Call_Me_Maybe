@@ -37,7 +37,9 @@ class JSONGenerator:
         for fun_name in function_list:
             tensor_ids = self.model.encode(fun_name).flatten().tolist()
             fun_scores = get_next_token_logits(self.model, prompt_ids)
-            scores[fun_name] = sum(fun_scores[token_id] for token_id in tensor_ids)
+            scores[fun_name] = sum(
+                fun_scores[token_id] for token_id in tensor_ids
+                )
 
         return max(scores, key=scores.get)
 
@@ -62,12 +64,38 @@ class JSONGenerator:
 
         return float(number_str)
 
-    def extract_string(self):
-        invalid_chars = self.vocab.search_characters("{", "}", "[", "]")
-        terminators = ""
+    def extract_string(self, prompt_ids: list):
+        terminators = self.vocab.search_characters('"\n')
+        not_valids = self.vocab.search_characters("{}[]")
+        valid_ids = []
+        tokens = []
 
-    def extract_boolean(self):
-        ...
+        for token, token_id in self.vocab.token_to_id.items():
+            if not any(char in token for char in not_valids):
+                valid_ids.append(token_id)
+        while True:
+
+            logits = get_next_token_logits(self.model, prompt_ids)
+
+            masked = apply_mask(logits, valid_ids)
+            selected = select_best_token(masked)
+            if selected in terminators:
+                break
+            tokens.append(selected)
+            prompt_ids.append(selected)
+        valid_str = self.model.decode(tokens)
+
+        return valid_str
+
+    def extract_boolean(self, prompt_ids: list):
+        true_id = self.vocab.search_exact("true")
+        false_id = self.vocab.search_exact("false")
+        valid_ids = true_id + false_id
+
+        bool_logits = get_next_token_logits(self.model, prompt_ids)
+        masked = apply_mask(bool_logits, valid_ids)
+        selected = select_best_token(masked)
+        return selected in true_id
 
 
 def load_generator() -> JSONGenerator:

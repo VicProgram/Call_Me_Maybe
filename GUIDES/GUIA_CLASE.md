@@ -1932,6 +1932,229 @@ while True:
 
 ---
 
+# LECCIÓN 31: CREAR constrained_decoder.py — extract_string
+
+## ¿Qué hace?
+
+Extrae un string usando decodificación restringida. El modelo genera el string token a token, y en cada paso solo puede elegir tokens válidos.
+
+## ¿Por qué es importante?
+
+Los strings son uno de los tipos de datos más comunes en las funciones. Sin esta función, el programa no puede extraer strings de las preguntas.
+
+## ¿Qué parámetros recibe?
+
+1. **`prompt_ids`** — Lista de IDs del prompt (el texto convertido a IDs)
+
+## ¿Qué variables locales necesita?
+
+1. **`terminators`** — IDs de tokens que indican el fin del string (`"`, `\n`)
+2. **`not_valids`** — IDs de tokens que contienen caracteres que rompen JSON (`{`, `}`, `[`, `]`)
+3. **`valid_ids`** — Lista de IDs de tokens válidos (todos excepto los que rompen JSON)
+4. **`tokens`** — Lista vacía para acumular los tokens generados
+
+## ¿Qué tokens rompen la estructura JSON?
+
+Los tokens que contienen `{`, `}`, `[`, `]` rompen la estructura JSON. El modelo no debe poder generarlos mientras extrae un string.
+
+## ¿Qué tokens son terminadores?
+
+Los tokens que indican el fin del string son `"` (comillas) y `\n` (salto de línea).
+
+## ¿Cómo funciona paso a paso?
+
+1. **Buscar tokens terminadores** — Usa `self.vocab.search_characters('"\n')`
+2. **Buscar tokens válidos** — Todos los tokens que no contienen `{`, `}`, `[`, `]`
+3. **Crear una lista vacía** — `tokens = []` para acumular los tokens generados
+4. **Bucle principal:**
+   - Obtener logits del modelo
+   - Aplicar máscara (solo tokens válidos)
+   - Elegir el token con la puntuación más alta
+   - Si es terminador → parar
+   - Si no → acumular y actualizar prompt_ids
+5. **Decodear tokens** — Convertir los IDs a un string
+6. **Devolver el string**
+
+## Flujo de datos:
+
+```
+prompt_ids → get_next_token_logits → logits
+logits → apply_mask → masked
+masked → select_best_token → selected
+selected → ¿es terminador? → sí: parar / no: acumular y actualizar prompt_ids
+tokens → decode → string → return
+```
+
+## Conceptos clave:
+
+### Buscar tokens que no contienen ciertos caracteres
+
+Itera sobre el vocabulario y verifica si el token contiene caracteres inválidos:
+
+```python
+for token, token_id in self.vocab.token_to_id.items():
+    if not any(char in token for char in not_valids):
+        valid_ids.append(token_id)
+```
+
+### Error común: search_characters con múltiples argumentos
+
+**Incorrecto:**
+```python
+not_valids = self.vocab.search_characters("{", "}", "[", "]")  # ❌
+```
+
+**Correcto:**
+```python
+not_valids = self.vocab.search_characters("{}[]")  # ✅
+```
+
+### Error común: usar id_to_token en vez de token_to_id
+
+**Incorrecto:**
+```python
+for token, token_id in self.vocab.id_to_token.items():  # ❌ id_to_token mapea ID → token
+```
+
+**Correcto:**
+```python
+for token, token_id in self.vocab.token_to_id.items():  # ✅ token_to_id mapea token → ID
+```
+
+---
+
+# LECCIÓN 32: CREAR constrained_decoder.py — extract_boolean
+
+## ¿Qué hace?
+
+Extrae un boolean (`true` o `false`) usando decodificación restringida.
+
+## ¿Por qué es importante?
+
+Los booleans son un tipo de datos común en las funciones. Sin esta función, el programa no puede extraer booleans de las preguntas.
+
+## ¿Qué parámetros recibe?
+
+1. **`prompt_ids`** — Lista de IDs del prompt (el texto convertido a IDs)
+
+## ¿Qué variables locales necesita?
+
+1. **`true_id`** — IDs del token `true`
+2. **`false_id`** — IDs del token `false`
+3. **`valid_ids`** — Lista combinada de `true_id` y `false_id`
+
+## ¿Cómo funciona paso a paso?
+
+1. **Buscar los IDs de `true` y `false`** — Usa `self.vocab.search_exact("true")` y `self.vocab.search_exact("false")`
+2. **Combinar en `valid_ids`** — `valid_ids = true_id + false_id`
+3. **Obtener logits del modelo** — `get_next_token_logits(self.model, prompt_ids)`
+4. **Aplicar máscara** — `apply_mask(bool_logits, valid_ids)`
+5. **Elegir token** — `select_best_token(masked)`
+6. **Devolver boolean** — `return selected in true_id`
+
+## Conceptos clave:
+
+### Buscar tokens exactos
+
+Usa `search_exact()` para buscar un token exacto:
+
+```python
+true_id = self.vocab.search_exact("true")
+false_id = self.vocab.search_exact("false")
+```
+
+### Error común: search_characters en vez de search_exact
+
+**Incorrecto:**
+```python
+true_id = self.vocab.search_characters("true")  # ❌ Busca tokens compuestos solo por t,r,u,e
+```
+
+**Correcto:**
+```python
+true_id = self.vocab.search_exact("true")  # ✅ Busca el token exacto "true"
+```
+
+### Comparar puntuaciones
+
+Para saber si `true` o `false` tiene mayor puntuación, usa `select_best_token` y verifica cuál fue elegido:
+
+```python
+selected = select_best_token(masked)
+return selected in true_id  # True si se eligió "true", False si se eligió "false"
+```
+
+---
+
+# PASOS LÓGICOS DEL PROYECTO
+
+## Paso 1: Preparar el entorno
+
+1. Crear la estructura de carpetas
+2. Crear `pyproject.toml` con dependencias
+3. Crear `Makefile` con atajos
+4. Copiar `llm_sdk` en la raíz
+5. Crear archivos de datos de entrada
+
+## Paso 2: Crear los modelos de datos (models.py)
+
+1. Crear `ParameterDefinition` — Define un parámetro de función
+2. Crear `FunctionDefinition` — Define una función completa
+3. Crear `FunctionCall` — Define el resultado final
+4. Crear `TestPrompt` — Define un prompt de prueba
+
+## Paso 3: Crear las herramientas de entrada/salida (tools.py)
+
+1. Crear `json_reader` — Lee archivos JSON
+2. Crear `load_function_def` — Carga y valida funciones
+3. Crear `load_prompt` — Carga prompts de prueba
+4. Crear `json_exporter` — Escribe resultados en JSON
+
+## Paso 4: Crear el constructor de prompts (prompt_builder.py)
+
+1. Crear `function_selection` — Construye prompt para elegir función
+2. Crear `arg_extract` — Construye prompt para extraer argumentos
+
+## Paso 5: Crear el vocabulario (vocab.py)
+
+1. Crear `VocabIndex` — Carga el vocabulario
+2. Crear `search_exact` — Busca tokens exactos
+3. Crear `search_prefix` — Busca tokens por prefijo
+4. Crear `search_characters` — Busca tokens por caracteres
+
+## Paso 6: Crear el decodificador restringido (constrained_decoder.py)
+
+1. Crear `get_next_token_logits` — Obtiene logits del modelo
+2. Crear `apply_mask` — Aplica máscara a los logits
+3. Crear `select_best_token` — Elige el token con la puntuación más alta
+4. Crear `JSONGenerator` — Clase que coordina todo
+5. Crear `select_function_name` — Elige el nombre de una función
+6. Crear `extract_number` — Extrae un número
+7. Crear `extract_string` — Extrae un string
+8. Crear `extract_boolean` — Extrae un boolean
+
+## Paso 7: Crear el orquestador (function_caller.py)
+
+1. Crear `FunctionCaller` — Clase que coordina todo
+2. Crear `resolve` — Dada una pregunta, elige función y extrae argumentos
+
+## Paso 8: Actualizar el punto de entrada (__main__.py)
+
+1. Importar todas las funciones y clases necesarias
+2. Cargar archivos de entrada
+3. Cargar el modelo
+4. Crear el FunctionCaller
+5. Procesar cada prompt
+6. Escribir resultados
+
+## Paso 9: Probar y depurar
+
+1. Ejecutar el programa
+2. Comprobar los resultados
+3. Depurar errores
+
+---
+
 # RESUMEN DE LAS FASES
 
 1. **Fase 0**: Preparar el entorno (carpetas, pyproject.toml, Makefile, llm_sdk, datos)
