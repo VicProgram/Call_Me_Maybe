@@ -51,22 +51,3 @@ class FunctionCaller:
             fn_name=sel_funct.name,
             args=extracted_args
         )
-
-# region
-#     Actualizando __main__.py
-# ¿Qué necesitas hacer?
-# 1. Importar todas las funciones y clases necesarias
-# 2. Cargar archivos de entrada
-# 3. Cargar el modelo
-# 4. Crear el FunctionCaller
-# 5. Procesar cada prompt
-# 6. Escribir resultados
-# Preguntas para ti:
-# 1. ¿Qué necesitas importar en __main__.py?
-# 2. ¿Cómo puedes crear un FunctionCaller?
-# 3. ¿Cómo puedes procesar cada prompt?
-# Responde y te guío para actualizar el archivo.
-# Build · LongCat 2.5 Preview Free · 2m 54s · 12.0 tok/s
-# SubagentsShellTerminals
-
-# endregion 
