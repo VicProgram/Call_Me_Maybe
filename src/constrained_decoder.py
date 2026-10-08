@@ -33,17 +33,39 @@ class JSONGenerator:
         self.model = model
         self.vocab = vocab
 
+    # region
+    # def select_function_name(self, prompt_ids: list, function_list: list):
+
+    #     scores = {}
+    #     for fun_name in function_list:
+    #         tensor_ids = self.model.encode(fun_name).flatten().tolist()
+    #         fun_scores = get_next_token_logits(self.model, prompt_ids)
+    #         scores[fun_name] = sum(
+    #             fun_scores[token_id] for token_id in tensor_ids
+    #             )
+
+    #     return max(scores, key=scores.get)
+    # endregion
+
+
     def select_function_name(self, prompt_ids: list, function_list: list):
 
         scores = {}
         for fun_name in function_list:
-            tensor_ids = self.model.encode(fun_name).flatten().tolist()
+            tensor_ids = self.model.encode(fun_name.name).flatten().tolist()
             fun_scores = get_next_token_logits(self.model, prompt_ids)
-            scores[fun_name] = sum(
+            scores[fun_name.name] = sum(
                 fun_scores[token_id] for token_id in tensor_ids
                 )
 
+        # Opción 2: Buscar el objeto después de obtener el nombre
+        best_name = max(scores, key=scores.get)
+        for fun in function_list:
+            if fun.name == best_name:
+                return fun
+
         return max(scores, key=scores.get)
+
 
     def extract_number(self, prompt_ids: list):
 
@@ -75,18 +97,17 @@ class JSONGenerator:
         for token, token_id in self.vocab.token_to_id.items():
             if not any(char in token for char in not_valids):
                 valid_ids.append(token_id)
+
         while True:
-
             logits = get_next_token_logits(self.model, prompt_ids)
-
             masked = apply_mask(logits, valid_ids)
             selected = select_best_token(masked)
+
             if selected in terminators:
                 break
             tokens.append(selected)
             prompt_ids.append(selected)
         valid_str = self.model.decode(tokens)
-
         return valid_str
 
     def extract_boolean(self, prompt_ids: list):
