@@ -1,6 +1,10 @@
 import argparse
 import sys
-from llm_sdk import Small_LLM_Model
+# Importamos Small_LLM_Model del SDK. La ruta puede cambiar según la estructura del proyecto.
+from llm_sdk.llm_sdk import Small_LLM_Model
+from pathlib import Path
+from src.tools import load_prompt, load_function_def, json_exporter
+from src.function_caller import FunctionCaller
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,10 +31,10 @@ def main() -> int:
     args = parse_args()
 
     if args.input.is_dir():
-        definitions_path = args.input / "function_definitions.json"
+        definitions_path = args.input / "functions_definition.json"
         tests_path = args.input / "function_calling_tests.json"
     else:
-        definitions_path = args.input.parent / "function_definitions.json"
+        definitions_path = args.input.parent / "functions_definition.json"
         tests_path = args.input
 
     print("Cargando archivos de entrada...")

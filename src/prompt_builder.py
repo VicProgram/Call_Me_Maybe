@@ -1,4 +1,5 @@
-from models import FunctionDefinition
+# Importamos FunctionDefinition del módulo models dentro de src.
+from src.models import FunctionDefinition
 from typing import Any
 
 

@@ -1,11 +1,11 @@
 from pydantic import BaseModel
-
+from enum import Enum
 
 class ParameterDefinition(BaseModel):
     type: str
 
 
-class ParameterType(BaseModel):
+class ParameterType(str, Enum):
     NUMBER = "number"
     STRING = "string"
 

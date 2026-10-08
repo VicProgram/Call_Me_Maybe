@@ -1,6 +1,7 @@
 import os
 import json
-from models import FunctionDefinition, TestPrompt, FunctionCall
+from typing import Any
+from src.models import FunctionDefinition, TestPrompt, FunctionCall
 
 
 def json_reader(file_path: str) -> Any:
@@ -34,7 +35,7 @@ def load_function_def(fun_def_json: str) -> list[FunctionDefinition]:
     functions_def = []
     for fun in data:
         try:
-            function_obj = FunctionDefinition(fun)
+            function_obj = FunctionDefinition(**fun)
             functions_def.append(function_obj)
         except Exception as e:
             raise ValueError(

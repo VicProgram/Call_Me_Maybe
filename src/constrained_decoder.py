@@ -1,6 +1,8 @@
 import numpy as np
-from llm_sdk import Small_LLM_Model
-from vocab import VocabIndex
+# Importamos Small_LLM_Model del SDK. La ruta puede cambiar según la estructura del proyecto.
+from llm_sdk.llm_sdk import Small_LLM_Model
+# Importamos VocabIndex del módulo vocab dentro de src.
+from src.vocab import VocabIndex
 
 
 def get_next_token_logits(model: Small_LLM_Model, input_ids: list) -> list[int]:
