@@ -27,34 +27,37 @@ def function_selection(
     return main_prompt
 
 
-# def arg_extract(
-#         selected_function: FunctionDefinition, user_prompt: str,
-#         target_param: str, extracted_args: dict
-#                 ) -> dict[str, Any]:
+def arg_extract(
+        selected_function: FunctionDefinition, user_prompt: str,
+        target_param: str, extracted_args: dict
+                ) -> dict[str, Any]:
 
-#     param_def = selected_function.parameters[target_param]
-
-#     main_prompt = (
-#         f"Function '{selected_function.name}' - '{selected_function.description}'\n"
-#         f"Extract parameter '{target_param}'- (type: {param_def.type})\n"
-#         f"Already extracted arguments: {extracted_args}\n"
-#         f"User request: {user_prompt}\n"
-#         "Value: "
-#     )
-
-#     return main_prompt
-
-
-
-def arg_extract(selected_function: FunctionDefinition, target_param: str, user_prompt, extracted_args) -> str:
-
-    # param_def = selected_function.parameters[target_param]
+    param_def = selected_function.parameters[target_param]
 
     main_prompt = (
-        f"Function: {selected_function.name} - {selected_function.description}\n"
-        f"Extract parameter '{target_param}':\n"
-        f"Value: "
+        f"Function '{selected_function.name}' - '{selected_function.description}'\n"
+        f"Extract parameter '{target_param}'- (type: {param_def.type})\n"
+        f"Already extracted arguments: {extracted_args}\n"
+        f"User request: {user_prompt}\n"
+        "Value: "
     )
+
     return main_prompt
 
 
+
+# def arg_extract(selected_function: FunctionDefinition, target_param: str, user_prompt, extracted_args) -> str:
+
+#     # param_def = selected_function.parameters[target_param]
+
+#     main_prompt = (
+#         f"Function: {selected_function.name} - {selected_function.description}\n"
+#         f"Extract parameter '{target_param}':\n"
+#         f"Value: "
+#     )
+#     return main_prompt
+
+
+# probar estos :  f"Extract the value of '{target_param}' from: {user_prompt}\n"
+#        f"Value: "
+    
