@@ -1,10 +1,10 @@
 import argparse
 import sys
 # Importamos Small_LLM_Model del SDK. La ruta puede cambiar según la estructura del proyecto.
-from llm_sdk.llm_sdk import Small_LLM_Model
+from llm_sdk import Small_LLM_Model
 from pathlib import Path
-from src.tools import load_prompt, load_function_def, json_exporter
-from src.function_caller import FunctionCaller
+from .tools import load_prompt, load_function_def, json_exporter
+from .function_caller import FunctionCaller
 
 
 def parse_args() -> argparse.Namespace:
@@ -95,8 +95,6 @@ def main() -> int:
 
     return 0 if errors == 0 else 1
 
-# se usa para cargar el generador, hay que cambiarla de sitio
-# generator = load_generator()
 
 if __name__ == "__main__":
     sys.exit(main())

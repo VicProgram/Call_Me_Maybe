@@ -1,9 +1,9 @@
-from llm_sdk.llm_sdk import Small_LLM_Model
-from src.vocab import VocabIndex
-from src.constrained_decoder import JSONGenerator
-from src.models import FunctionDefinition
-from src.models import FunctionCall
-from src.prompt_builder import function_selection, arg_extract
+from llm_sdk import Small_LLM_Model
+from .vocab import VocabIndex
+from .constrained_decoder import JSONGenerator
+from .models import FunctionDefinition
+from .models import FunctionCall
+from .prompt_builder import function_selection, arg_extract
 
 
 class FunctionCaller:

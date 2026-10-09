@@ -1,7 +1,7 @@
 import os
 import json
 from typing import Any
-from src.models import FunctionDefinition, TestPrompt, FunctionCall
+from .models import FunctionDefinition, TestPrompt, FunctionCall
 
 
 def json_reader(file_path: str) -> Any:
