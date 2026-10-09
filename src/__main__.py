@@ -1,6 +1,5 @@
 import argparse
 import sys
-# Importamos Small_LLM_Model del SDK. La ruta puede cambiar según la estructura del proyecto.
 from llm_sdk import Small_LLM_Model
 from pathlib import Path
 from .tools import load_prompt, load_function_def, json_exporter
