@@ -1,9 +1,9 @@
+import json
 from llm_sdk import Small_LLM_Model
 from .vocab import VocabIndex
 from .constrained_decoder import JSONGenerator
 from .models import FunctionDefinition
 from .models import FunctionCall
-from .prompt_builder import fun_selection, arg_extract
 
 
 class FunctionCaller:
@@ -45,7 +45,8 @@ class FunctionCaller:
             A FunctionCall object with the selected
             function and extracted arguments.
         """
-
+        # region
+        """
         prompt_txt = fun_selection(prompt, fun_list)
 
         prompt_ids = self.model.encode(prompt_txt).flatten().tolist()
@@ -75,4 +76,15 @@ class FunctionCaller:
             prompt=prompt,
             fn_name=sel_funct.name,
             args=extracted_args
-        )
+        )   """
+        # endregion
+        raw_json = self.generator.generate_json(prompt, fun_list)
+
+        try:
+            data = json.loads(raw_json)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"JSON inválido generado: {e} ({raw_json!r})")
+
+        return FunctionCall(
+            prompt=prompt, fn_name=data["fn_name"], args=data["args"]
+            )

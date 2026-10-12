@@ -74,6 +74,7 @@ def main() -> int:
 
     print("\nProcesando prompts...")
     for i, prompt_item in enumerate(prompts):
+        """
         if isinstance(prompt_item, dict):
             prompt = (
                 prompt_item.get("prompt")
@@ -82,6 +83,8 @@ def main() -> int:
             )
         else:
             prompt = str(prompt_item)
+            """
+        prompt = prompt_item.prompt
 
         print(f"\n[{i+1}/{len(prompts)}] {prompt[:70]}...")
         print("  (Ejecutando inferencia, espera un momento...)")
