@@ -387,85 +387,40 @@ Es la misma idea que el "formulario de Hacienda" de la Lección 1: campos con re
 ### 5.2. Crear ParameterDefinition
 
 **Qué hacer:**
-Define la plantilla para un parámetro de función.
-
-**Qué necesita:**
-- Un campo para el tipo del parámetro (por ejemplo, "number", "string", "boolean")
+Un único campo `type: str` para cada parámetro (por ejemplo, `"number"`, `"string"` o `"boolean"`).
 
 **Qué debe hacer:**
-- Validar que el tipo sea un texto válido
-- Lanzar un error si el tipo no es un texto
-
-**Por qué lo haces:**
-Cada parámetro de una función tiene un tipo. Esta plantilla asegura que el tipo sea un texto válido.
-
-**Cómo debería funcionar:**
-Si intentas crear un parámetro con un tipo que no es un texto, Pydantic lanzará un error claro.
+Que Pydantic valide que `type` sea texto; si no, lanzará un error claro.
 
 ---
 
 ### 5.3. Crear FunctionDefinition
 
 **Qué hacer:**
-Define la plantilla para una función completa.
-
-**Qué necesita:**
-- Un campo para el nombre de la función
-- Un campo para la descripción de la función
-- Un campo para los parámetros de la función (un diccionario donde las claves son nombres de parámetros y los valores son objetos ParameterDefinition)
-- Un campo para el tipo de retorno de la función
+Cuatro campos: `name: str`, `description: str`, `parameters: dict[str, ParameterDefinition]` y `returns: dict[str, str]`.
 
 **Qué debe hacer:**
-- Validar que todos los campos estén presentes y sean del tipo correcto
-- Convertir los diccionarios JSON en objetos ParameterDefinition automáticamente
-- Lanzar un error si algún campo es inválido
-
-**Por qué lo haces:**
-Una función tiene un nombre, una descripción, parámetros y un tipo de retorno. Esta plantilla asegura que todos estos campos estén presentes y sean del tipo correcto.
-
-**Cómo debería funcionar:**
-Si intentas crear una función sin nombre o con parámetros inválidos, Pydantic lanzará un error.
+Validar que todos los campos estén y sean del tipo correcto, y convertir automáticamente cada diccionario de `parameters` en un `ParameterDefinition`.
 
 ---
 
 ### 5.4. Crear FunctionCall
 
 **Qué hacer:**
-Define la plantilla para el resultado final.
-
-**Qué necesita:**
-- Un campo para la pregunta original
-- Un campo para el nombre de la función elegida
-- Un campo para los argumentos extraídos (un diccionario donde las claves son nombres de parámetros y los valores son los argumentos)
+Tres campos: `prompt: str` (la pregunta original), `fn_name: str` (la función elegida) y `args: dict[str, object]` (los argumentos extraídos).
 
 **Qué debe hacer:**
-- Validar que todos los campos estén presentes y sean del tipo correcto
-- Lanzar un error si algún campo es inválido
-
-**Por qué lo haces:**
-El resultado final del programa es un objeto FunctionCall que contiene la pregunta original, el nombre de la función elegida y los argumentos extraídos.
-
-**Cómo debería funcionar:**
-Cuando el programa genera un resultado, crea un objeto FunctionCall con los datos correctos.
+Validar que los tres estén presentes y sean del tipo correcto. Este objeto es el resultado final del programa.
 
 ---
 
 ### 5.5. Crear TestPrompt
 
 **Qué hacer:**
-Define la plantilla para un prompt de prueba.
-
-**Qué necesita:**
-- Un campo para el texto del prompt
+Un único campo `prompt: str`.
 
 **Qué debe hacer:**
-- Validar que el prompt sea un texto válido
-
-**Por qué lo haces:**
-Los prompts de prueba son las preguntas que el sistema debe procesar. Esta plantilla asegura que cada prompt sea un texto válido.
-
-**Cómo debería funcionar:**
-Cuando el programa lee los prompts de prueba, crea objetos TestPrompt con los datos correctos.
+Validar que el prompt sea texto. Representa cada pregunta de prueba que el sistema debe procesar.
 
 ---
 
@@ -1473,68 +1428,38 @@ FunctionCall(prompt=prompt, fn_name=data["fn_name"], args=data["args"])
 
 ### 11.1. Implementar parse_args
 
-**Qué hace:**
-Define los argumentos que acepta el programa desde la línea de comandos.
-
-**¿Qué necesita?**
-- Ninguno (usa argparse de la librería estándar)
-
-**¿Qué debe hacer?**
-- Definir el argumento `--input` (directorio de entrada)
-- Definir el argumento `--output` (archivo de salida)
-- Devolver los argumentos parseados
+**Qué hacer:**
+Definir con `argparse` los argumentos `--input` (directorio de entrada) y `--output` (archivo de salida), y devolverlos.
 
 **Por qué lo haces:**
-El programa necesita saber dónde están los archivos de entrada y dónde guardar los resultados.
-
-**Cómo debería funcionar:**
-Cuando ejecutas el programa con `--input` y `--output`, el programa usa esas rutas.
+El programa necesita saber de dónde leer y dónde escribir.
 
 ---
 
 ### 11.2. Implementar main
 
-**Qué hace:**
-La función principal que coordina todo el proceso.
-
-**¿Qué necesita?**
-- Los argumentos parseados
-- Las rutas a los archivos de entrada y salida
-
-**¿Qué debe hacer?**
+**Qué hacer:**
+Coordinar todo el flujo:
 1. Parsear los argumentos
-2. Cargar los archivos de entrada
+2. Cargar las definiciones de funciones y los prompts
 3. Cargar el modelo
-4. Crear el FunctionCaller
-5. Para cada prompt, llamar a caller.resolve()
-6. Escribir los resultados
-7. Mostrar un resumen
-
-**Por qué lo haces:**
-Esta función es el punto de entrada del programa. Cuando la llamas, todo el sistema se pone en marcha.
-
-**Cómo debería funcionar:**
-Cuando ejecutas el programa, procesa todas las preguntas y genera un archivo JSON con los resultados.
+4. Crear el `FunctionCaller`
+5. Llamar a `caller.resolve()` para cada prompt
+6. Escribir los resultados y mostrar un resumen
 
 ---
 
 ### 11.3. Añadir el bloque if __name__ == "__main__"
 
-**Qué hace:**
-Añade el bloque estándar de Python que ejecuta main() cuando el archivo se ejecuta directamente.
-
-**¿Qué necesita?**
-- Ninguno
-
-**¿Qué debe hacer?**
-- Verificar si el archivo se ejecuta directamente
-- Si es así, ejecutar main() y salir con el código de retorno
+**Qué hacer:**
+Añadir el bloque estándar de Python:
+```python
+if __name__ == "__main__":
+    sys.exit(main())
+```
 
 **Por qué lo haces:**
-Este bloque es estándar en Python. Significa: "Si este archivo se ejecuta directamente (no importado), ejecuta main()".
-
-**Cómo debería funcionar:**
-Cuando ejecutas `python -m src`, el programa ejecuta main() y devuelve un código de salida (0 = éxito, 1 = error).
+Hace que `main()` se ejecute solo cuando lanzas el módulo (`python -m src`), no cuando lo importas. El código de salida es 0 si todo fue bien y 1 si hubo errores.
 
 ---
 
@@ -1543,25 +1468,12 @@ Cuando ejecutas `python -m src`, el programa ejecuta main() y devuelve un códig
 ### 12.1. Ejecutar el programa
 
 **Qué hacer:**
-Ejecuta el programa con `make run` o `uv run python -m src`.
-
-**Cómo hacerlo:**
-Escribe el comando en la terminal.
-
-**Por qué lo haces:**
-Necesitas comprobar que el programa funciona correctamente.
-
-**Cómo debería funcionar:**
-El programa debería cargar el modelo, procesar todas las preguntas y generar un archivo JSON con los resultados.
+Ejecuta `make run` (o `uv run python -m src`). El programa cargará el modelo, procesará todas las preguntas y escribirá `data/output/function_calling_results.json`.
 
 ---
 
 ### 12.2. Comprobar los resultados
 
-**Qué hacer:**
-Abre el archivo de salida y comprueba que los resultados son correctos.
-
-**Cómo hacerlo:**
 Abre `data/output/function_calling_results.json` y revisa cada resultado. Conviene comprobar, en este orden:
 
 1. **¿Es JSON parseable?** — Debe poder leerse con `json.loads`. Si esto falla, el fallo es del decoder.
@@ -1570,27 +1482,20 @@ Abre `data/output/function_calling_results.json` y revisa cada resultado. Convie
 4. **¿El `fn_name` es correcto?** — Debe ser una de las funciones disponibles y la adecuada para la pregunta (aquí puede fallar el modelo).
 5. **¿Los `args` son correctos y del tipo adecuado?** — Números como números (no `"2"`), strings bien formados, etc.
 
-**Por qué lo haces:**
-Necesitas comprobar que el programa ha elegido las funciones correctas y ha extraído los argumentos correctos.
-
-**Cómo debería funcionar:**
-Cada resultado debería tener exactamente un `prompt`, un `fn_name` y un `args` con los valores correctos. Recuerda el reparto de responsabilidades de la Lección 3.5: si el JSON está bien pero el valor no, el fallo es del modelo, no del decoder.
+Recuerda el reparto de responsabilidades de la Lección 3.5: si el JSON está bien formado pero el valor no es el esperado, el fallo es del modelo, no del decoder.
 
 ---
 
 ### 12.3. Depurar errores
 
 **Qué hacer:**
-Si hay errores, ejecuta el programa en modo depuración para ver dónde falla.
+Ejecuta el programa bajo `pdb` para ver dónde falla:
+```bash
+uv run python -m pdb -m src
+```
+(Si tu Makefile define el target, `make debug` equivale a lo mismo.)
 
-**Cómo hacerlo:**
-Escribe `uv run python -m pdb -m src` (o `make debug`, si tu Makefile define ese target) en la terminal.
-
-**Por qué lo haces:**
-El modo depuración te permite ejecutar el programa paso a paso y ver dónde está el error.
-
-**Cómo debería funcionar:**
-El programa se detendrá en el error y podrás ver los valores de las variables.
+Con `pdb` puedes avanzar paso a paso y ver los valores de las variables.
 
 ---
 
