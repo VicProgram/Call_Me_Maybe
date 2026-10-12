@@ -2,6 +2,7 @@ import numpy as np
 from llm_sdk import Small_LLM_Model
 from .vocab import VocabIndex
 from .models import JSONState
+from .prompt_builder import fun_selection
 
 
 def get_next_token_logits(
@@ -196,7 +197,7 @@ class JSONGenerator:
         return selected in self.true_id
 
     def generate_json(
-            self, model: Small_LLM_Model, prompt: str, fun_list: list
+            self,  prompt: str, fun_list: list
             ) -> dict:
         """Generate a JSON object using the finite state machine.
 
@@ -210,20 +211,28 @@ class JSONGenerator:
         """
 
         state = JSONState.START
-        prompt_ids = model.encode("").flatten().tolist()
+        prompt_ids = self.model.encode(
+            fun_selection(prompt, fun_list)
+            ).flatten().tolist()
+
         output_tokens = []
+        selected_fun = self.select_function_name(prompt_ids, fun_list)
+        param_names = list(selected_fun.parameters.keys())
+        param_count = 0
 
         while state != JSONState.FINISHED:
-            selected, new_state = self.select_state(
-                model, state, prompt_ids, fun_list
-            )
-            if selected is not None:
-                output_tokens.append(selected)
-                for token in selected:
-                    prompt_ids.append(token)
+            tokens, new_state = self.select_state(
+                state, prompt_ids, selected_fun, param_names, param_count
+                )
+
+            for token in tokens:
+                prompt_ids.append(token)
+                output_tokens.append(token)
+            if new_state == JSONState.NEXT_PARAM:
+                param_count += 1
             state = new_state
 
-        res_text = model.decode(output_tokens)
+        res_text = self.model.decode(output_tokens)
         return res_text
 
     def check_termination(self, buffer: str, fixed_text: str) -> bool:
@@ -247,8 +256,8 @@ class JSONGenerator:
         return None
 
     def select_state(
-        self, state: JSONState, prompt_ids: list, fun_list: list,
-            param_names: list) -> tuple[int, JSONState]:
+        self, state: JSONState, prompt_ids: list, selected_fun,
+            param_names: list, param_count: int) -> tuple[int, JSONState]:
 
         """Select the next token based on the current state.
 
@@ -272,13 +281,13 @@ class JSONGenerator:
 
             case JSONState.PROMPT:
                 logits = get_next_token_logits(self.model, prompt_ids)
-                valid_ids = self.string_valid_ids
-                masked = apply_mask(logits, valid_ids)
+                masked = apply_mask(logits, self.string_valid_ids)
                 selected = select_best_token(masked)
-                generated = self.model.decode(prompt_ids)
 
-                if self.check_termination(generated, '{"prompt": "'):
-                    return selected, JSONState.PROMPT
+                if selected in self.string_terminators:
+                    return [], JSONState.AFTER_PROMPT
+
+                return [selected], JSONState.PROMPT
 
             case JSONState.AFTER_PROMPT:
                 fixed_txt = self.model.encode(
@@ -286,46 +295,91 @@ class JSONGenerator:
                 selected = fixed_txt
                 return selected, JSONState.FN_NAME
 
+            # case JSONState.FN_NAME:
+            # logits = get_next_token_logits(self.model, prompt_ids)
+            # valid_ids = []
+            #    for fun in fun_list:
+            #      name_tokens = self.model.encode(
+            #           fun.name).flatten().tolist()
+            #        valid_ids.extend(name_tokens)
+            #    masked = apply_mask(logits, valid_ids)
+            #    selected = select_best_token(masked)
+            #    return selected, JSONState.AFTER_NAME
+
             case JSONState.FN_NAME:
-                logits = get_next_token_logits(self.model, prompt_ids)
-                valid_ids = []
-                for fun in fun_list:
-                    name_tokens = self.model.encode(
-                        fun.name).flatten().tolist()
-                    valid_ids.extend(name_tokens)
-                masked = apply_mask(logits, valid_ids)
-                selected = select_best_token(masked)
-                return selected, JSONState.AFTER_NAME
+                tokens = self.model.encode(
+                    selected_fun.name
+                    ).flatten().tolist()
+                return tokens, JSONState.AFTER_NAME
 
             case JSONState.AFTER_NAME:
+                if not param_names:
+                    fixed_txt = self.model.encode(
+                        '", "args": {').flatten().tolist()
+                    return fixed_txt, JSONState.END
                 fixed_txt = self.model.encode(
-                    '", "args": {').flatten().tolist()
+                  '", "args": {').flatten().tolist()
+
                 selected = fixed_txt
+
                 return selected, JSONState.PARAM_KEY
 
             case JSONState.PARAM_KEY:
-                param_name = param_names[0]
+                param_name = param_names[param_count]
+                param_type = selected_fun.parameters[param_names].type
+
+                opening = '": "' if param_type == "string" else '": '
+
                 fixed_txt = self.model.encode(
-                    f'"{param_name}": '
-                    ).flatten().tolist()
-                selected = fixed_txt
-                return selected, JSONState.PARAM_VALUE
+                    f'"{param_name}{opening}'
+                ).flatten().tolist()
+                return fixed_txt, JSONState.PARAM_VALUE
 
             case JSONState.PARAM_VALUE:
+                param_name = param_names[param_count]
+                param_type = selected_fun.parameters[param_name].type
+
+                if param_type == "number":
+                    valid_ids = self.number_valid_ids
+                    terminators = self.number_terminators
+                elif param_type == "string":
+                    valid_ids = self.string_valid_ids
+                    terminators = self.string_terminators
+                else:
+                    valid_ids = self.bool_valid_ids
+                    terminators = []
+
                 logits = get_next_token_logits(self.model, prompt_ids)
-                valid_ids = []
                 masked = apply_mask(logits, valid_ids)
                 selected = select_best_token(masked)
-                return selected, JSONState.NEXT_PARAM
+
+                if selected in terminators:
+                    return [], JSONState.NEXT_PARAM
+
+                if param_type == "bool":
+                    return [selected], JSONState.NEXT_PARAM
+
+                return [selected], JSONState.PARAM_VALUE
 
             case JSONState.NEXT_PARAM:
-                if len(param_names) > 1:
-                    fixed_txt = self.model.encode(
-                        f', "{param_names[1]}": '
-                        ).flatten().tolist()
+                close = ""
+                if param_count > 0:
+                    prev = param_names[param_count - 1]
+                    if selected_fun.parameters[prev].type == "string":
+                        close = '"'
 
-                    selected = fixed_txt
-                    return selected, JSONState.PARAM_VALUE
+                if param_count < len(param_names):
+                    nxt = param_names[param_count]
+                    nxt_type = selected_fun.parameters[nxt].type
+                    opening = '": "' if nxt_type == "string" else '": '
+                    fixed_txt = self.model.encode(
+                        f'{close}, "{nxt}{opening}'
+                    ).flatten().tolist()
+                    return fixed_txt, JSONState.PARAM_VALUE
+
+                fixed_txt = self.model.encode(
+                    f'{close}}}').flatten().tolist()
+                return fixed_txt, JSONState.END
 
             case JSONState.END:
                 fixed_txt = self.model.encode('}').flatten().tolist()
