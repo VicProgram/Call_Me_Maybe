@@ -112,20 +112,17 @@ class JSONGenerator:
         Returns:
             The FunctionDefinition with the highest score.
         """
+        logits = get_next_token_logits(self.model, prompt_ids)
+
         scores = {}
-        for fun_name in function_list:
-            tensor_ids = self.model.encode(fun_name.name).flatten().tolist()
-            fun_scores = get_next_token_logits(self.model, prompt_ids)
-            scores[fun_name.name] = sum(
-                fun_scores[token_id] for token_id in tensor_ids
-                )
+        for fun in function_list:
+            name_ids = self.model.encode(fun.name).flatten().tolist()
+            scores[fun.name] = sum(logits[token_id] for token_id in name_ids)
 
         best_name = max(scores, key=scores.get)
         for fun in function_list:
             if fun.name == best_name:
                 return fun
-
-        return max(scores, key=scores.get)
 
     def extract_number(self, prompt_ids: list):
         """Extract a number using constrained decoding.
@@ -217,12 +214,13 @@ class JSONGenerator:
         output_tokens = []
 
         while state != JSONState.FINISHED:
-            selected, new_state = select_state(
+            selected, new_state = self.select_state(
                 model, state, prompt_ids, fun_list
             )
             if selected is not None:
                 output_tokens.append(selected)
-                prompt_ids.append(selected)
+                for token in selected:
+                    prompt_ids.append(token)
             state = new_state
 
         res_text = model.decode(output_tokens)
@@ -248,15 +246,10 @@ class JSONGenerator:
 
         return None
 
-
     def select_state(
-        self,
-        model: Small_LLM_Model,
-        state: JSONState,
-        prompt_ids: list,
-        fun_list: list,
-        param_names: list
-    ) -> tuple[int, JSONState]:
+        self, state: JSONState, prompt_ids: list, fun_list: list,
+            param_names: list) -> tuple[int, JSONState]:
+
         """Select the next token based on the current state.
 
         Args:
@@ -272,48 +265,54 @@ class JSONGenerator:
 
         match state:
             case JSONState.START:
-                fixed_txt = model.encode('{"prompt": "').flatten().tolist()
-                selected = fixed_txt[0]
+                fixed_txt = self.model.encode(
+                    '{"prompt": "').flatten().tolist()
+                selected = fixed_txt
                 return selected, JSONState.PROMPT
 
             case JSONState.PROMPT:
-                logits = get_next_token_logits(model, prompt_ids)
+                logits = get_next_token_logits(self.model, prompt_ids)
                 valid_ids = self.string_valid_ids
                 masked = apply_mask(logits, valid_ids)
                 selected = select_best_token(masked)
-                generated = model.decode(prompt_ids)
+                generated = self.model.decode(prompt_ids)
 
-                if self.check_termination(generated, '{"prompt": "')
-                return selected, JSONState.PROMPT
+                if self.check_termination(generated, '{"prompt": "'):
+                    return selected, JSONState.PROMPT
 
             case JSONState.AFTER_PROMPT:
-                fixed_txt = model.encode('", "fn_name": "').flatten().tolist()
-                selected = fixed_txt[0]
+                fixed_txt = self.model.encode(
+                    '", "fn_name": "').flatten().tolist()
+                selected = fixed_txt
                 return selected, JSONState.FN_NAME
 
             case JSONState.FN_NAME:
-                logits = get_next_token_logits(model, prompt_ids)
+                logits = get_next_token_logits(self.model, prompt_ids)
                 valid_ids = []
                 for fun in fun_list:
-                    name_tokens = model.encode(fun.name).flatten().tolist()
+                    name_tokens = self.model.encode(
+                        fun.name).flatten().tolist()
                     valid_ids.extend(name_tokens)
                 masked = apply_mask(logits, valid_ids)
                 selected = select_best_token(masked)
                 return selected, JSONState.AFTER_NAME
 
             case JSONState.AFTER_NAME:
-                fixed_txt = model.encode('", "args": {').flatten().tolist()
-                selected = fixed_txt[0]
+                fixed_txt = self.model.encode(
+                    '", "args": {').flatten().tolist()
+                selected = fixed_txt
                 return selected, JSONState.PARAM_KEY
 
             case JSONState.PARAM_KEY:
                 param_name = param_names[0]
-                fixed_txt = model.encode(f'"{param_name}": ').flatten().tolist()
-                selected = fixed_txt[0]
+                fixed_txt = self.model.encode(
+                    f'"{param_name}": '
+                    ).flatten().tolist()
+                selected = fixed_txt
                 return selected, JSONState.PARAM_VALUE
 
             case JSONState.PARAM_VALUE:
-                logits = get_next_token_logits(model, prompt_ids)
+                logits = get_next_token_logits(self.model, prompt_ids)
                 valid_ids = []
                 masked = apply_mask(logits, valid_ids)
                 selected = select_best_token(masked)
@@ -321,16 +320,16 @@ class JSONGenerator:
 
             case JSONState.NEXT_PARAM:
                 if len(param_names) > 1:
-                    fixed_txt = model.encode(
+                    fixed_txt = self.model.encode(
                         f', "{param_names[1]}": '
                         ).flatten().tolist()
 
-                    selected = fixed_txt[0]
+                    selected = fixed_txt
                     return selected, JSONState.PARAM_VALUE
 
             case JSONState.END:
-                fixed_txt = model.encode('}').flatten().tolist()
-                selected = fixed_txt[0]
+                fixed_txt = self.model.encode('}').flatten().tolist()
+                selected = fixed_txt
                 return selected, JSONState.FINISHED
 
             case JSONState.FINISHED:
