@@ -70,23 +70,6 @@ class VocabIndex:
 
         return []
 
-    def search_prefix(self, prefix: str) -> list[int]:
-        """Search for all tokens that start with a given prefix.
-
-        Args:
-            prefix: The prefix to search for.
-
-        Returns:
-            A list of token IDs whose tokens start with the given prefix.
-        """
-        valid_tokens = []
-
-        for token in self.token_to_id:
-            if token.startswith(prefix):
-                valid_tokens.append(self.token_to_id[token])
-
-        return valid_tokens
-
     def search_characters(self, valid_chars: str) -> list[int]:
         """Search for all tokens composed only of the given characters.
 

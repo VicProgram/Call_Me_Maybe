@@ -19,7 +19,7 @@
         "prompt": "Greet shrek",
         "fn_name": "fn_greet",
         "args": {
-            "name": "Shrek"
+            "name": "shrek"
         }
     },
     {
@@ -31,36 +31,30 @@
     },
     {
         "prompt": "Reverse the string 'hello'",
-        "fn_name": "fn_substitute_string_with_regex",
+        "fn_name": "fn_reverse_string",
         "args": {
-            "source_string": "hello",
-            "regex": "h.*o.*",
-            "replacement": "world"
+            "s": "hello"
         }
     },
     {
         "prompt": "Reverse the string 'world'",
-        "fn_name": "fn_substitute_string_with_regex",
+        "fn_name": "fn_reverse_string",
         "args": {
-            "source_string": "world",
-            "regex": "w.*o.*l.*d",
-            "replacement": "world"
+            "s": "world"
         }
     },
     {
         "prompt": "What is the square root of 16?",
-        "fn_name": "fn_add_numbers",
+        "fn_name": "fn_get_square_root",
         "args": {
-            "a": 16,
-            "b": 0
+            "a": 16
         }
     },
     {
         "prompt": "Calculate the square root of 144",
-        "fn_name": "fn_add_numbers",
+        "fn_name": "fn_get_square_root",
         "args": {
-            "a": 144,
-            "b": 0
+            "a": 144
         }
     },
     {

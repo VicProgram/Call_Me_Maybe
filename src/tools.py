@@ -5,12 +5,17 @@ from .models import FunctionDefinition, TestPrompt, FunctionCall
 
 
 def json_reader(file_path: str) -> Any:
-    """
-    Reads a JSON file and returns its content as a Python object.
+    """Read a JSON file and return its content as a Python object.
 
     Args:
-        file_path (str): The path to the JSON file.
-        """
+        file_path: The path to the JSON file.
+
+    Returns:
+        The parsed JSON content.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+    """
 
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -54,7 +59,7 @@ def load_function_def(fun_def_json: str) -> list[FunctionDefinition]:
             functions_def.append(function_obj)
         except Exception as e:
             raise ValueError(
-                f"Error procesing function {fun}: {e}")
+                f"Error processing function {fun}: {e}")
 
     return functions_def
 
@@ -98,7 +103,7 @@ def load_prompt(prompt_json: str) -> list[TestPrompt]:
 
         except Exception as e:
             raise ValueError(
-                f"Error procesing the prompt '{prompt}': {e}"
+                f"Error processing the prompt '{prompt}': {e}"
             )
     return prompt_list
 

@@ -1,6 +1,5 @@
-# Importamos FunctionDefinition del módulo models dentro de src.
+# Import FunctionDefinition from the models module inside src.
 from .models import FunctionDefinition
-from typing import Any
 
 
 def fun_selection(
@@ -33,38 +32,6 @@ def fun_selection(
         f"{functions_text}\n"
         f"{user_prompt}\n"
         "Function to call: "
-    )
-
-    return main_prompt
-
-
-def arg_extract(
-        selected_function: FunctionDefinition, user_prompt: str,
-        target_param: str, extracted_args: dict
-                ) -> dict[str, Any]:
-    """Build a prompt for argument extraction.
-
-    Creates a formatted prompt that instructs the LLM to extract
-    the value of a specific parameter from the user's request.
-
-    Args:
-        selected_function: The function chosen for extraction.
-        user_prompt: The user's natural language request.
-        target_param: The name of the parameter to extract.
-        extracted_args: Dictionary of already extracted arguments.
-
-    Returns:
-        A formatted prompt string for argument extraction.
-    """
-    param_def = selected_function.parameters[target_param]
-
-    main_prompt = (
-        f"Function '{selected_function.name}' - "
-        f"'{selected_function.description}'\n"
-        f"Extract parameter '{target_param}'- (type: {param_def.type})\n"
-        f"Already extracted arguments: {extracted_args}\n"
-        f"User request: {user_prompt}\n"
-        "Value: "
     )
 
     return main_prompt

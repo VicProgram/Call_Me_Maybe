@@ -60,13 +60,10 @@ class TestPrompt(BaseModel):
 
 
 class JSONState(Enum):
-    START = auto()           # Forzar: {"prompt": "
-    PROMPT = auto()          # Preguntar: el usuario prompt
-    AFTER_PROMPT = auto()    # Forzar: ", "fn_name": "
-    FN_NAME = auto()         # Preguntar: nombre de la función
-    AFTER_NAME = auto()      # Forzar: ", "args": {
-    PARAM_KEY = auto()       # Forzar: "nombre_param":
-    PARAM_VALUE = auto()     # Preguntar: valor del parámetro
-    NEXT_PARAM = auto()      # Forzar: , "siguiente_param": o }
-    END = auto()             # Forzar: }}
-    FINISHED = auto()        # Finalizar
+    FN_NAME = auto()         # Forced: function name
+    AFTER_NAME = auto()      # Forced: ", "args": {
+    PARAM_KEY = auto()       # Forced: "param_name":
+    PARAM_VALUE = auto()     # Ask the model: parameter value
+    NEXT_PARAM = auto()      # Forced: , "next_param": or }
+    END = auto()             # Forced: }}
+    FINISHED = auto()        # Done

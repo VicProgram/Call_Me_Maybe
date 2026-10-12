@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 from llm_sdk import Small_LLM_Model
 from .vocab import VocabIndex
@@ -53,6 +55,20 @@ def select_best_token(masked: list) -> int:
     return best_token
 
 
+def log_softmax(logits: list) -> list:
+    """Normalize raw logits into log-probabilities.
+
+    Args:
+        logits: The raw logits for the next token.
+
+    Returns:
+        An array with the log-probability of each token.
+    """
+    max_logit = np.max(logits)
+    shifted = logits - max_logit
+    return shifted - np.log(np.sum(np.exp(shifted)))
+
+
 class JSONGenerator:
     """Generator for JSON output using constrained decoding.
 
@@ -101,124 +117,70 @@ class JSONGenerator:
         self.bool_valid_ids = self.true_id + self.false_id
 
     def select_function_name(self, prompt_ids: list, function_list: list):
-        """Select the most appropriate function using constrained decoding.
+        """Select the function whose name is the most probable.
 
-        Scores each function based on the sum of logits for its tokens
-        and returns the function with the highest score.
+        Every candidate name is scored token by token: each token
+        is evaluated in the context of the prompt plus the name
+        tokens generated so far. The function with the highest
+        summed log-probability wins.
 
         Args:
-            prompt_ids: Token IDs of the prompt.
-            function_list: List of FunctionDefinition objects.
+            prompt_ids: Token IDs representing the prompt context.
+            function_list: Available function definitions.
 
         Returns:
-            The FunctionDefinition with the highest score.
+            The function with the highest score.
         """
-        logits = get_next_token_logits(self.model, prompt_ids)
+        best_fun = None
+        best_score = None
 
-        scores = {}
         for fun in function_list:
-            name_ids = self.model.encode(fun.name).flatten().tolist()
-            scores[fun.name] = sum(logits[token_id] for token_id in name_ids)
+            ids = list(prompt_ids)
+            score = 0.0
 
-        best_name = max(scores, key=scores.get)
-        for fun in function_list:
-            if fun.name == best_name:
-                return fun
+            for token_id in self.model.encode(fun.name).flatten().tolist():
+                logits = get_next_token_logits(self.model, ids)
+                score += float(log_softmax(logits)[token_id])
+                ids.append(token_id)
 
-    def extract_number(self, prompt_ids: list):
-        """Extract a number using constrained decoding.
+            if best_score is None or score > best_score:
+                best_fun = fun
+                best_score = score
 
-        Generates digits, decimal point, and minus sign until
-        a terminator token is found.
-
-        Args:
-            prompt_ids: Token IDs of the prompt.
-
-        Returns:
-            The extracted number as a float.
-        """
-        tokens = []
-
-        while True:
-            logits = get_next_token_logits(self.model, prompt_ids)
-            masked = apply_mask(logits, self.number_valid_ids)
-            selected = select_best_token(masked)
-            if selected in self.number_terminators:
-                break
-            tokens.append(selected)
-            prompt_ids.append(selected)
-        number_str = self.model.decode(tokens)
-
-        return float(number_str)
-
-    def extract_string(self, prompt_ids: list):
-        """Extract a string using constrained decoding.
-
-        Generates characters until a terminator token is found
-        or the generated string ends with a quote or newline.
-
-        Args:
-            prompt_ids: Token IDs of the prompt.
-
-        Returns:
-            The extracted string.
-        """
-        tokens = []
-
-        while True:
-            logits = get_next_token_logits(self.model, prompt_ids)
-            masked = apply_mask(logits, self.string_valid_ids)
-            selected = select_best_token(masked)
-
-            if selected in self.string_terminators:
-                break
-            tokens.append(selected)
-            prompt_ids.append(selected)
-            valid_str = self.model.decode(tokens)
-            if valid_str.endswith('"') or valid_str.endswith('\n'):
-                break
-        return valid_str
-
-    def extract_boolean(self, prompt_ids: list):
-        """Extract a boolean using constrained decoding.
-
-        Generates either 'true' or 'false' based on the model's choice.
-
-        Args:
-            prompt_ids: Token IDs of the prompt.
-
-        Returns:
-            True if 'true' was selected, False otherwise.
-        """
-
-        bool_logits = get_next_token_logits(self.model, prompt_ids)
-        masked = apply_mask(bool_logits, self.bool_valid_ids)
-        selected = select_best_token(masked)
-        return selected in self.true_id
+        return best_fun
 
     def generate_json(
-            self,  prompt: str, fun_list: list
-            ) -> dict:
+            self, prompt: str, fun_list: list
+            ) -> str:
         """Generate a JSON object using the finite state machine.
 
         Args:
-            model: The language model.
-            prompt: The user's prompt.
-            function_list: List of available functions.
+            prompt: The user's natural language request.
+            fun_list: List of available function definitions.
 
         Returns:
-            A dictionary with the generated JSON structure.
+            The generated JSON text as a string.
         """
 
-        state = JSONState.START
         prompt_ids = self.model.encode(
             fun_selection(prompt, fun_list)
             ).flatten().tolist()
 
-        output_tokens = []
         selected_fun = self.select_function_name(prompt_ids, fun_list)
         param_names = list(selected_fun.parameters.keys())
         param_count = 0
+
+        # The input prompt is known, so we force it verbatim instead of
+        # letting the model generate it: the model used to rewrite it
+        # capitalized (e.g. "Greet Shrek") and that echo contaminated the
+        # extraction of string arguments such as the "name" of fn_greet.
+        # json.dumps also keeps the escaping correct when the prompt
+        # contains quotes (case fn_substitute_string_with_regex).
+        opening = '{"prompt": ' + json.dumps(prompt) + ', "fn_name": "'
+        output_tokens = self.model.encode(opening).flatten().tolist()
+        prompt_ids += output_tokens
+
+        state = JSONState.FN_NAME
 
         while state != JSONState.FINISHED:
             tokens, new_state = self.select_state(
@@ -235,66 +197,24 @@ class JSONGenerator:
         res_text = self.model.decode(output_tokens)
         return res_text
 
-    def check_termination(self, buffer: str, fixed_text: str) -> bool:
-        """Verifica si el buffer contiene el
-        texto fijo que indica terminación."""
-        return fixed_text in buffer
-
-    def get_param_type(self, param_name: str, function_list: list) -> str:
-        """Obtiene el tipo de un parámetro de la función seleccionada."""
-        for fun in function_list:
-            if param_name in fun.parameters:
-                return fun.parameters[param_name].type
-        return None
-
-    def get_next_param_name(self, param_names: list, used_params: list) -> str:
-        """Obtiene el nombre del siguiente parámetro a procesar."""
-        for param in param_names:
-            if param not in used_params:
-                return param
-
-        return None
-
     def select_state(
         self, state: JSONState, prompt_ids: list, selected_fun,
-            param_names: list, param_count: int) -> tuple[int, JSONState]:
-
-        """Select the next token based on the current state.
+            param_names: list, param_count: int
+            ) -> tuple[list[int], JSONState]:
+        """Select the tokens to emit for the current state.
 
         Args:
-            model: The language model.
             state: Current state of the FSM.
-            prompt_ids: Current token IDs.
-            function_list: Available functions (for FN_NAME state).
-            param_names: Parameter names (for PARAM_KEY state).
+            prompt_ids: Current token IDs of the context.
+            selected_fun: The function chosen for the call.
+            param_names: Names of the parameters to extract.
+            param_count: Index of the parameter being extracted.
 
         Returns:
-            A tuple of (selected_token_id, new_state).
+            A tuple with the tokens to emit and the next state.
         """
 
         match state:
-            case JSONState.START:
-                fixed_txt = self.model.encode(
-                    '{"prompt": "').flatten().tolist()
-                selected = fixed_txt
-                return selected, JSONState.PROMPT
-
-            case JSONState.PROMPT:
-                logits = get_next_token_logits(self.model, prompt_ids)
-                masked = apply_mask(logits, self.string_valid_ids)
-                selected = select_best_token(masked)
-
-                if selected in self.string_terminators:
-                    return [], JSONState.AFTER_PROMPT
-
-                return [selected], JSONState.PROMPT
-
-            case JSONState.AFTER_PROMPT:
-                fixed_txt = self.model.encode(
-                    '", "fn_name": "').flatten().tolist()
-                selected = fixed_txt
-                return selected, JSONState.FN_NAME
-
             case JSONState.FN_NAME:
                 tokens = self.model.encode(
                     selected_fun.name
@@ -377,24 +297,3 @@ class JSONGenerator:
 
             case JSONState.FINISHED:
                 return None, JSONState.FINISHED
-
-
-def force_tokens(model: Small_LLM_Model, fixed_text: str, logits: list):
-
-    fixed_tokens = model.encode(fixed_text)
-    masked = apply_mask(logits, fixed_tokens)
-    selected = select_best_token(masked)
-
-    return selected
-
-
-def load_generator() -> JSONGenerator:
-    """Load and initialize a JSONGenerator with a model and vocabulary.
-
-    Returns:
-        An initialized JSONGenerator instance.
-    """
-    model = Small_LLM_Model()
-    vocab_path = model.get_path_to_vocab_file()
-    vocab = VocabIndex(vocab_path)
-    return JSONGenerator(model, vocab)

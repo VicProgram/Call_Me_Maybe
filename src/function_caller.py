@@ -39,11 +39,14 @@ class FunctionCaller:
 
         Args:
             prompt: The user's natural language request.
-            functions_list: List of available FunctionDefinition objects.
+            fun_list: List of available FunctionDefinition objects.
 
         Returns:
             A FunctionCall object with the selected
             function and extracted arguments.
+
+        Raises:
+            ValueError: If the generated text is not valid JSON.
         """
 
         raw_json = self.generator.generate_json(prompt, fun_list)

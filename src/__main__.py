@@ -74,16 +74,6 @@ def main() -> int:
 
     print("\nProcesando prompts...")
     for i, prompt_item in enumerate(prompts):
-        """
-        if isinstance(prompt_item, dict):
-            prompt = (
-                prompt_item.get("prompt")
-                or prompt_item.get("text")
-                or str(prompt_item)
-            )
-        else:
-            prompt = str(prompt_item)
-            """
         prompt = prompt_item.prompt
 
         print(f"\n[{i+1}/{len(prompts)}] {prompt[:70]}...")
@@ -112,5 +102,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    """Execute the main function when run as a script."""
     sys.exit(main())
