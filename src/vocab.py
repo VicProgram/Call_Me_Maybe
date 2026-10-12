@@ -94,7 +94,8 @@ class VocabIndex:
             valid_chars: A string of allowed characters.
 
         Returns:
-            A list of token IDs whose tokens are composed only of the allowed characters.
+            A list of token IDs whose tokens are composed
+            only of the allowed characters.
         """
         token_chars = []
 

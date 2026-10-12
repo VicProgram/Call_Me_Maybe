@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from enum import Enum
 
+
 class ParameterDefinition(BaseModel):
     """Definition of a function parameter.
 

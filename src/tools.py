@@ -18,7 +18,9 @@ def json_reader(file_path: str) -> Any:
         return data
 
     except FileNotFoundError:
-        raise FileNotFoundError(f"Error: The file '{file_path}' was not found.")
+        raise FileNotFoundError(
+            f"Error: The file '{file_path}' was not found."
+            )
 
 
 def load_function_def(fun_def_json: str) -> list[FunctionDefinition]:
@@ -38,7 +40,9 @@ def load_function_def(fun_def_json: str) -> list[FunctionDefinition]:
         data = json_reader(fun_def_json)
 
     except Exception as e:
-        raise ValueError(f"Error al leer el archivo JSON '{fun_def_json}': {e}")
+        raise ValueError(
+            f"Error al leer el archivo JSON '{fun_def_json}': {e}"
+            )
 
     if not isinstance(data, list):
         raise TypeError(f"Error: the data {data} is not a list")
@@ -74,7 +78,9 @@ def load_prompt(prompt_json: str) -> list[TestPrompt]:
     try:
         data = json_reader(prompt_json)
     except Exception as e:
-        raise ValueError(f"Error al leer el archivo JSON '{prompt_json}' : {e}")
+        raise ValueError(
+            f"Error al leer el archivo JSON '{prompt_json}' : {e}"
+            )
 
     if not isinstance(data, list):
         raise TypeError(f"Error: the data {data} is not an array")
@@ -97,7 +103,9 @@ def load_prompt(prompt_json: str) -> list[TestPrompt]:
     return prompt_list
 
 
-def json_exporter(func_call_obj: list[FunctionCall], func_call_path: str) -> None:
+def json_exporter(
+        func_call_obj: list[FunctionCall], func_call_path: str
+        ) -> None:
     """Export function call results to a JSON file.
 
     Creates the output directory if it does not exist and writes

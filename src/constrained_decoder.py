@@ -3,7 +3,9 @@ from llm_sdk import Small_LLM_Model
 from .vocab import VocabIndex
 
 
-def get_next_token_logits(model: Small_LLM_Model, input_ids: list) -> list[int]:
+def get_next_token_logits(
+    model: Small_LLM_Model, input_ids: list
+        ) -> list[int]:
     """Get logits from the model for the next token.
 
     Args:
@@ -75,7 +77,7 @@ class JSONGenerator:
         self.model = model
         self.vocab = vocab
 
-        #numbers
+        # numbers
         digits = self.vocab.search_characters("0123456789")
         dot = self.vocab.search_characters(".")
         minus = self.vocab.search_characters("-")
@@ -83,7 +85,7 @@ class JSONGenerator:
         self.number_terminators = self.vocab.search_characters(" ,\n\t")
         self.number_valid_ids = self.number_valid_ids + self.number_terminators
 
-        #strings
+        # strings
         self.string_valid_ids = []
         for token, token_id in self.vocab.token_to_id.items():
             if not any(char in token for char in "{}[]"):
@@ -91,7 +93,7 @@ class JSONGenerator:
         self.string_terminators = self.vocab.search_characters('"\n')
         self.string_valid_ids = self.string_valid_ids + self.string_terminators
 
-        #booleans
+        # booleans
         self.true_id = self.vocab.search_exact("true")
         self.false_id = self.vocab.search_exact("false")
         self.bool_valid_ids = self.true_id + self.false_id
@@ -150,7 +152,6 @@ class JSONGenerator:
 
         return float(number_str)
 
-
     def extract_string(self, prompt_ids: list):
         """Extract a string using constrained decoding.
 
@@ -176,7 +177,7 @@ class JSONGenerator:
             prompt_ids.append(selected)
             valid_str = self.model.decode(tokens)
             if valid_str.endswith('"') or valid_str.endswith('\n'):
-                break        
+                break
         return valid_str
 
     def extract_boolean(self, prompt_ids: list):

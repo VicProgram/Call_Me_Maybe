@@ -3,7 +3,7 @@ from .vocab import VocabIndex
 from .constrained_decoder import JSONGenerator
 from .models import FunctionDefinition
 from .models import FunctionCall
-from .prompt_builder import function_selection, arg_extract
+from .prompt_builder import fun_selection, arg_extract
 
 
 class FunctionCaller:
@@ -29,7 +29,9 @@ class FunctionCaller:
         self.vocab = VocabIndex(vocab_path)
         self.generator = JSONGenerator(model, self.vocab)
 
-    def resolve(self, prompt: str, functions_list: list[FunctionDefinition]) -> FunctionCall:
+    def resolve(
+            self, prompt: str, fun_list: list[FunctionDefinition]
+            ) -> FunctionCall:
         """Resolve a prompt into a function call.
 
         Selects the most appropriate function and extracts all
@@ -40,14 +42,15 @@ class FunctionCaller:
             functions_list: List of available FunctionDefinition objects.
 
         Returns:
-            A FunctionCall object with the selected function and extracted arguments.
+            A FunctionCall object with the selected
+            function and extracted arguments.
         """
 
-        prompt_txt = function_selection(prompt, functions_list)
+        prompt_txt = fun_selection(prompt, fun_list)
 
         prompt_ids = self.model.encode(prompt_txt).flatten().tolist()
 
-        sel_funct = self.generator.select_function_name(prompt_ids, functions_list)
+        sel_funct = self.generator.select_function_name(prompt_ids, fun_list)
 
         extracted_args = {}
         for param_name, param_def in sel_funct.parameters.items():
