@@ -7,6 +7,11 @@ from .function_caller import FunctionCaller
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments.
+
+    Returns:
+        The parsed arguments as an argparse.Namespace object.
+    """
     parser = argparse.ArgumentParser(
         description="LLM Function Calling System - call me maybe"
     )
@@ -27,6 +32,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """Main entry point for the program.
+
+    Loads input files, initializes the model, processes all prompts,
+    and writes the results to the output file.
+
+    Returns:
+        0 if all prompts were processed successfully, 1 otherwise.
+    """
     args = parse_args()
 
     if args.input.is_dir():
@@ -96,4 +109,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    """Execute the main function when run as a script."""
     sys.exit(main())

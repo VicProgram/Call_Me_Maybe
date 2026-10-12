@@ -6,7 +6,18 @@ from typing import Any
 def function_selection(
         user_prompt: str, function_list: list[FunctionDefinition]
         ) -> str:
+    """Build a prompt for function selection.
 
+    Creates a formatted prompt that instructs the LLM to select
+    the most appropriate function for the user's request.
+
+    Args:
+        user_prompt: The user's natural language request.
+        function_list: List of available FunctionDefinition objects.
+
+    Returns:
+        A formatted prompt string for function selection.
+    """
     formatted_functions = []
 
     for function in function_list:
@@ -31,7 +42,20 @@ def arg_extract(
         selected_function: FunctionDefinition, user_prompt: str,
         target_param: str, extracted_args: dict
                 ) -> dict[str, Any]:
+    """Build a prompt for argument extraction.
 
+    Creates a formatted prompt that instructs the LLM to extract
+    the value of a specific parameter from the user's request.
+
+    Args:
+        selected_function: The function chosen for extraction.
+        user_prompt: The user's natural language request.
+        target_param: The name of the parameter to extract.
+        extracted_args: Dictionary of already extracted arguments.
+
+    Returns:
+        A formatted prompt string for argument extraction.
+    """
     param_def = selected_function.parameters[target_param]
 
     main_prompt = (

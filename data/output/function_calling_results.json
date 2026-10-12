@@ -1,0 +1,99 @@
+[
+    {
+        "prompt": "prompt='What is the sum of 2 and 3?'",
+        "fn_name": "fn_add_numbers",
+        "args": {
+            "a": 5.0,
+            "b": 5.0
+        }
+    },
+    {
+        "prompt": "prompt='What is the sum of 265 and 345?'",
+        "fn_name": "fn_add_numbers",
+        "args": {
+            "a": 265.0,
+            "b": 610.0
+        }
+    },
+    {
+        "prompt": "prompt='Greet shrek'",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "1\n",
+            "regex": "1\n",
+            "replacement": "1\n"
+        }
+    },
+    {
+        "prompt": "prompt='Greet john'",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "1\n",
+            "regex": "1\n",
+            "replacement": "1\n"
+        }
+    },
+    {
+        "prompt": "prompt=\"Reverse the string 'hello'\"",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "1\n",
+            "regex": "1\n",
+            "replacement": "1\n"
+        }
+    },
+    {
+        "prompt": "prompt=\"Reverse the string 'world'\"",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "1\n",
+            "regex": "1\n",
+            "replacement": "1\n"
+        }
+    },
+    {
+        "prompt": "prompt='What is the square root of 16?'",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "4\n",
+            "regex": "4\n",
+            "replacement": "4\n"
+        }
+    },
+    {
+        "prompt": "prompt='Calculate the square root of 144'",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "12\n",
+            "regex": "12\n",
+            "replacement": "12\n"
+        }
+    },
+    {
+        "prompt": "prompt='Replace all numbers in \"Hello 34 I\\'m 233 years old\" with NUMBERS'",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "34, 233\n",
+            "regex": "34, 233\\n\n",
+            "replacement": "34, 233\\n\n"
+        }
+    },
+    {
+        "prompt": "prompt=\"Replace all vowels in 'Programming is fun' with asterisks\"",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "1\n",
+            "regex": "1\n",
+            "replacement": "1\n"
+        }
+    },
+    {
+        "prompt": "prompt=\"Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'\"",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "1\n",
+            "regex": "1\n",
+            "replacement": "1\n"
+        }
+    }
+]

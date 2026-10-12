@@ -7,13 +7,41 @@ from .prompt_builder import function_selection, arg_extract
 
 
 class FunctionCaller:
+    """Orchestrator for the function calling process.
+
+    Coordinates function selection and argument extraction
+    using the constrained decoder.
+
+    Attributes:
+        model: The language model to use.
+        vocab: The vocabulary index for token lookups.
+        generator: The JSONGenerator for constrained decoding.
+    """
+
     def __init__(self, model: Small_LLM_Model):
+        """Initialize the FunctionCaller with a model.
+
+        Args:
+            model: The language model to use.
+        """
         self.model = model
         vocab_path = model.get_path_to_vocab_file()
         self.vocab = VocabIndex(vocab_path)
         self.generator = JSONGenerator(model, self.vocab)
 
     def resolve(self, prompt: str, functions_list: list[FunctionDefinition]) -> FunctionCall:
+        """Resolve a prompt into a function call.
+
+        Selects the most appropriate function and extracts all
+        required arguments using constrained decoding.
+
+        Args:
+            prompt: The user's natural language request.
+            functions_list: List of available FunctionDefinition objects.
+
+        Returns:
+            A FunctionCall object with the selected function and extracted arguments.
+        """
 
         prompt_txt = function_selection(prompt, functions_list)
 
