@@ -1,6 +1,7 @@
 import numpy as np
 from llm_sdk import Small_LLM_Model
 from .vocab import VocabIndex
+from .models import JSONState
 
 
 def get_next_token_logits(
@@ -196,6 +197,129 @@ class JSONGenerator:
         masked = apply_mask(bool_logits, self.bool_valid_ids)
         selected = select_best_token(masked)
         return selected in self.true_id
+
+    def generate_json(
+            self, model: Small_LLM_Model, prompt: str, fun_list: list
+            ) -> dict:
+        """Generate a JSON object using the finite state machine.
+
+        Args:
+            model: The language model.
+            prompt: The user's prompt.
+            function_list: List of available functions.
+
+        Returns:
+            A dictionary with the generated JSON structure.
+        """
+
+        state = JSONState.START
+        prompt_ids = model.encode("").flatten().tolist()
+        output_tokens = []
+
+        while state != JSONState.FINISHED:
+            selected, new_state = select_state(
+                model, state, prompt_ids, fun_list
+            )
+            if selected is not None:
+                output_tokens.append(selected)
+                prompt_ids.append(selected)
+            state = new_state
+
+        res_text = model.decode(output_tokens)
+        return res_text
+
+
+def select_state(
+    model: Small_LLM_Model,
+    state: JSONState,
+    prompt_ids: list,
+    fun_list: list,
+    param_names: list
+) -> tuple[int, JSONState]:
+    """Select the next token based on the current state.
+
+    Args:
+        model: The language model.
+        state: Current state of the FSM.
+        prompt_ids: Current token IDs.
+        function_list: Available functions (for FN_NAME state).
+        param_names: Parameter names (for PARAM_KEY state).
+
+    Returns:
+        A tuple of (selected_token_id, new_state).
+    """
+
+    match state:
+        case JSONState.START:
+            fixed_txt = model.encode('{"prompt": "').flatten().tolist()
+            selected = fixed_txt[0]
+            return selected, JSONState.PROMPT
+
+        case JSONState.PROMPT:
+            logits = get_next_token_logits(model, prompt_ids)
+            valid_ids = self.string_valid_ids
+            masked = apply_mask(logits, valid_ids)
+            selected = select_best_token(masked)
+            return selected, JSONState.PROMPT
+
+        case JSONState.AFTER_PROMPT:
+            fixed_txt = model.encode('", "fn_name": "').flatten().tolist()
+            selected = fixed_txt[0]
+            return selected, JSONState.FN_NAME
+
+        case JSONState.FN_NAME:
+            logits = get_next_token_logits(model, prompt_ids)
+            valid_ids = []
+            for fun in function_list:
+                name_tokens = model.encode(fun.name).flatten().tolist()
+                valid_ids.extend(name_tokens)
+            masked = apply_mask(logits, valid_ids)
+            selected = select_best_token(masked)
+            return selected, JSONState.AFTER_NAME
+
+        case JSONState.AFTER_NAME:
+            fixed_txt = model.encode('", "args": {').flatten().tolist()
+            selected = fixed_txt[0]
+            return selected, JSONState.PARAM_KEY
+
+        case JSONState.PARAM_KEY:
+            param_name = param_names[0]
+            fixed_txt = model.encode(f'"{param_name}": ').flatten().tolist()
+            selected = fixed_txt[0]
+            return selected, JSONState.PARAM_VALUE
+
+        case JSONState.PARAM_VALUE:
+            logits = get_next_token_logits(model, prompt_ids)
+            valid_ids = []
+            masked = apply_mask(logits, valid_ids)
+            selected = select_best_token(masked)
+            return selected, JSONState.NEXT_PARAM
+
+        case JSONState.NEXT_PARAM:
+            if len(param_names) > 1:
+                fixed_txt = model.encode(
+                    f', "{param_names[1]}": '
+                    ).flatten().tolist()
+
+                selected = fixed_txt[0]
+                return selected, JSONState.PARAM_VALUE
+
+        case JSONState.END:
+            fixed_txt = model.encode('}').flatten().tolist()
+            selected = fixed_txt[0]
+            return selected, JSONState.FINISHED
+
+        case JSONState.FINISHED:
+            return None, JSONState.FINISHED
+
+
+def force_tokens(model: Small_LLM_Model, fixed_text: str, logits: list):
+
+    fixed_tokens = model.encode(fixed_text)
+    masked = apply_mask(logits, fixed_tokens)
+    selected = select_best_token(masked)
+
+    return selected
 
 
 def load_generator() -> JSONGenerator:

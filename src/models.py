@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from enum import Enum
+from enum import Enum, auto
 
 
 class ParameterDefinition(BaseModel):
@@ -57,3 +57,16 @@ class TestPrompt(BaseModel):
         prompt: The natural language prompt text.
     """
     prompt: str
+
+
+class JSONState(Enum):
+    START = auto()           # Forzar: {"prompt": "
+    PROMPT = auto()          # Preguntar: el usuario prompt
+    AFTER_PROMPT = auto()    # Forzar: ", "fn_name": "
+    FN_NAME = auto()         # Preguntar: nombre de la función
+    AFTER_NAME = auto()      # Forzar: ", "args": {
+    PARAM_KEY = auto()       # Forzar: "nombre_param":
+    PARAM_VALUE = auto()     # Preguntar: valor del parámetro
+    NEXT_PARAM = auto()      # Forzar: , "siguiente_param": o }
+    END = auto()             # Forzar: }}
+    FINISHED = auto()        # Finalizar
