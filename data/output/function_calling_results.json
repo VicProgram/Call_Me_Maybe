@@ -64,6 +64,15 @@
         }
     },
     {
+        "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS",
+        "fn_name": "fn_substitute_string_with_regex",
+        "args": {
+            "source_string": "Hello 34 I'm 233 years old",
+            "regex": "34|233",
+            "replacement": "NUMBERS"
+        }
+    },
+    {
         "prompt": "Replace all vowels in 'Programming is fun' with asterisks",
         "fn_name": "fn_substitute_string_with_regex",
         "args": {
