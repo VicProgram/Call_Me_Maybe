@@ -295,17 +295,6 @@ class JSONGenerator:
                 selected = fixed_txt
                 return selected, JSONState.FN_NAME
 
-            # case JSONState.FN_NAME:
-            # logits = get_next_token_logits(self.model, prompt_ids)
-            # valid_ids = []
-            #    for fun in fun_list:
-            #      name_tokens = self.model.encode(
-            #           fun.name).flatten().tolist()
-            #        valid_ids.extend(name_tokens)
-            #    masked = apply_mask(logits, valid_ids)
-            #    selected = select_best_token(masked)
-            #    return selected, JSONState.AFTER_NAME
-
             case JSONState.FN_NAME:
                 tokens = self.model.encode(
                     selected_fun.name
@@ -315,7 +304,7 @@ class JSONGenerator:
             case JSONState.AFTER_NAME:
                 if not param_names:
                     fixed_txt = self.model.encode(
-                        '", "args": {').flatten().tolist()
+                        '", "args": {}').flatten().tolist()
                     return fixed_txt, JSONState.END
                 fixed_txt = self.model.encode(
                   '", "args": {').flatten().tolist()
@@ -326,7 +315,7 @@ class JSONGenerator:
 
             case JSONState.PARAM_KEY:
                 param_name = param_names[param_count]
-                param_type = selected_fun.parameters[param_names].type
+                param_type = selected_fun.parameters[param_name].type
 
                 opening = '": "' if param_type == "string" else '": '
 
@@ -356,7 +345,7 @@ class JSONGenerator:
                 if selected in terminators:
                     return [], JSONState.NEXT_PARAM
 
-                if param_type == "bool":
+                if param_type not in ("number", "string"):
                     return [selected], JSONState.NEXT_PARAM
 
                 return [selected], JSONState.PARAM_VALUE
