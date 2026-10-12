@@ -92,7 +92,7 @@ class JSONGenerator:
         for token, token_id in self.vocab.token_to_id.items():
             if not any(char in token for char in "{}[]"):
                 self.string_valid_ids.append(token_id)
-        self.string_terminators = self.vocab.search_characters('"\n')
+        self.string_terminators = self.vocab.search_any_character('"\n')
         self.string_valid_ids = self.string_valid_ids + self.string_terminators
 
         # booleans

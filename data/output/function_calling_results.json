@@ -1,99 +1,84 @@
 [
     {
-        "prompt": "prompt='What is the sum of 2 and 3?'",
+        "prompt": "What is the sum of 2 and 3?",
         "fn_name": "fn_add_numbers",
         "args": {
-            "a": 5.0,
-            "b": 5.0
+            "a": 2,
+            "b": 3
         }
     },
     {
-        "prompt": "prompt='What is the sum of 265 and 345?'",
+        "prompt": "What is the sum of 265 and 345?",
         "fn_name": "fn_add_numbers",
         "args": {
-            "a": 265.0,
-            "b": 610.0
+            "a": 265,
+            "b": 345
         }
     },
     {
-        "prompt": "prompt='Greet shrek'",
-        "fn_name": "fn_substitute_string_with_regex",
+        "prompt": "Greet shrek",
+        "fn_name": "fn_greet",
         "args": {
-            "source_string": "1\n",
-            "regex": "1\n",
-            "replacement": "1\n"
+            "name": "Shrek"
         }
     },
     {
-        "prompt": "prompt='Greet john'",
-        "fn_name": "fn_substitute_string_with_regex",
+        "prompt": "Greet john",
+        "fn_name": "fn_greet",
         "args": {
-            "source_string": "1\n",
-            "regex": "1\n",
-            "replacement": "1\n"
+            "name": "john"
         }
     },
     {
-        "prompt": "prompt=\"Reverse the string 'hello'\"",
+        "prompt": "Reverse the string 'hello'",
         "fn_name": "fn_substitute_string_with_regex",
         "args": {
-            "source_string": "1\n",
-            "regex": "1\n",
-            "replacement": "1\n"
+            "source_string": "hello",
+            "regex": "h.*o.*",
+            "replacement": "world"
         }
     },
     {
-        "prompt": "prompt=\"Reverse the string 'world'\"",
+        "prompt": "Reverse the string 'world'",
         "fn_name": "fn_substitute_string_with_regex",
         "args": {
-            "source_string": "1\n",
-            "regex": "1\n",
-            "replacement": "1\n"
+            "source_string": "world",
+            "regex": "w.*o.*l.*d",
+            "replacement": "world"
         }
     },
     {
-        "prompt": "prompt='What is the square root of 16?'",
-        "fn_name": "fn_substitute_string_with_regex",
+        "prompt": "What is the square root of 16?",
+        "fn_name": "fn_add_numbers",
         "args": {
-            "source_string": "4\n",
-            "regex": "4\n",
-            "replacement": "4\n"
+            "a": 16,
+            "b": 0
         }
     },
     {
-        "prompt": "prompt='Calculate the square root of 144'",
-        "fn_name": "fn_substitute_string_with_regex",
+        "prompt": "Calculate the square root of 144",
+        "fn_name": "fn_add_numbers",
         "args": {
-            "source_string": "12\n",
-            "regex": "12\n",
-            "replacement": "12\n"
+            "a": 144,
+            "b": 0
         }
     },
     {
-        "prompt": "prompt='Replace all numbers in \"Hello 34 I\\'m 233 years old\" with NUMBERS'",
+        "prompt": "Replace all vowels in 'Programming is fun' with asterisks",
         "fn_name": "fn_substitute_string_with_regex",
         "args": {
-            "source_string": "34, 233\n",
-            "regex": "34, 233\\n\n",
-            "replacement": "34, 233\\n\n"
+            "source_string": "Programming is fun",
+            "regex": ".*? vowels.*?",
+            "replacement": " *"
         }
     },
     {
-        "prompt": "prompt=\"Replace all vowels in 'Programming is fun' with asterisks\"",
+        "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'",
         "fn_name": "fn_substitute_string_with_regex",
         "args": {
-            "source_string": "1\n",
-            "regex": "1\n",
-            "replacement": "1\n"
-        }
-    },
-    {
-        "prompt": "prompt=\"Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'\"",
-        "fn_name": "fn_substitute_string_with_regex",
-        "args": {
-            "source_string": "1\n",
-            "regex": "1\n",
-            "replacement": "1\n"
+            "source_string": "The cat sat on the mat with another cat",
+            "regex": "cat.*cat",
+            "replacement": "dog"
         }
     }
 ]

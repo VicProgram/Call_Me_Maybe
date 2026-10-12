@@ -104,3 +104,21 @@ class VocabIndex:
                 token_chars.append(self.token_to_id[token])
 
         return token_chars
+
+    def search_any_character(self, valid_chars: str) -> list[int]:
+        """Search for tokens containing any of the given characters.
+
+        Args:
+            valid_chars: A string of characters to look for.
+
+        Returns:
+            A list of token IDs whose tokens contain at least
+            one of the allowed characters.
+        """
+        token_chars = []
+
+        for token in self.token_to_id:
+            if any(c in valid_chars for c in token):
+                token_chars.append(self.token_to_id[token])
+
+        return token_chars
