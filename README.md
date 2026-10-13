@@ -324,9 +324,32 @@ project's verification procedure. Adding one would be the natural next step.
 make install      # equivalent to: uv sync
 ```
 
-This installs the runtime dependencies (`numpy`, `pydantic`) and the local
-`llm_sdk` package declared in `pyproject.toml`. The model weights are downloaded
-from the Hugging Face Hub on first run.
+This installs the runtime dependencies (`numpy`, `pydantic`, `flake8`, `mypy`)
+and the local `llm_sdk` package declared in `pyproject.toml`. The model weights
+are downloaded from the Hugging Face Hub on first run.
+
+#### Virtual environment location
+
+The `Makefile` does not keep the virtual environment in the project root.
+Instead it exports `UV_PROJECT_ENVIRONMENT` (together with `UV_CACHE_DIR` and
+`HF_HOME`) so that everything lives under a single storage directory:
+
+```make
+export UV_PROJECT_ENVIRONMENT:=$(STORAGE)/venv
+```
+
+Because of this, `make install`, `make run`, `make lint`, etc. create and use
+the environment at `$(STORAGE)/venv`, not at `./.venv`. If you run a bare `uv`
+command instead (for example `uv sync` or `uv run ...`), `UV_PROJECT_ENVIRONMENT`
+is not set and uv falls back to creating a `./.venv` in the project root. That
+`.venv` is not required and is already listed in `.gitignore`; delete it with
+`rm -rf .venv` if it appears. To avoid it, either use the `make` targets or export
+the variable first:
+
+```bash
+export UV_PROJECT_ENVIRONMENT="$HOME/sgoinfre/vic_cache/venv"
+export UV_CACHE_DIR="$HOME/sgoinfre/vic_cache/uv-cache"
+```
 
 ### Running
 
