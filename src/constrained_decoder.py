@@ -169,13 +169,6 @@ class JSONGenerator:
         selected_fun = self.select_function_name(prompt_ids, fun_list)
         param_names = list(selected_fun.parameters.keys())
         param_count = 0
-
-        # The input prompt is known, so we force it verbatim instead of
-        # letting the model generate it: the model used to rewrite it
-        # capitalized (e.g. "Greet Shrek") and that echo contaminated the
-        # extraction of string arguments such as the "name" of fn_greet.
-        # json.dumps also keeps the escaping correct when the prompt
-        # contains quotes (case fn_substitute_string_with_regex).
         opening = '{"prompt": ' + json.dumps(prompt) + ', "fn_name": "'
         output_tokens = self.model.encode(opening).flatten().tolist()
         prompt_ids += output_tokens

@@ -1,4 +1,3 @@
-# Import FunctionDefinition from the models module inside src.
 from .models import FunctionDefinition
 
 

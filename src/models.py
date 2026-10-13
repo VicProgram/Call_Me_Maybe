@@ -60,10 +60,10 @@ class TestPrompt(BaseModel):
 
 
 class JSONState(Enum):
-    FN_NAME = auto()         # Forced: function name
-    AFTER_NAME = auto()      # Forced: ", "args": {
-    PARAM_KEY = auto()       # Forced: "param_name":
-    PARAM_VALUE = auto()     # Ask the model: parameter value
-    NEXT_PARAM = auto()      # Forced: , "next_param": or }
-    END = auto()             # Forced: }}
-    FINISHED = auto()        # Done
+    FN_NAME = auto()
+    AFTER_NAME = auto()
+    PARAM_KEY = auto()
+    PARAM_VALUE = auto()
+    NEXT_PARAM = auto()
+    END = auto()
+    FINISHED = auto()
