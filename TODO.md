@@ -147,3 +147,111 @@ Estos NO son solo "el modelo se equivoca": hay caracteres que el decoder
 - Prompt de selección: `src/prompt_builder.py:4-36`
 - Grader: `moulinette/moulinette/__main__.py:128-174`
 - Funciones y asserts: `moulinette/moulinette/functions_definition.py`
+
+---
+
+# Mirar a parte
+
+> Nota aparte sobre los tres arreglos funcionales (puntos 4, 5 y 6 de la revisión
+> del subject). No forman parte del plan numerado de arriba; quedan aquí como
+> referencia para revisarlos/implementarlos con calma.
+
+Contexto del subject: el output debe ser JSON 100% válido (garantía del decoder),
+los tipos deben coincidir con `functions_definition.json` (ejemplo V.4.1 con
+`2.0`, `3.0`) y se probará con otros prompts/function sets, no solo con los 11
+ejemplos.
+
+## 4) Coaccionar `number` → `float`
+
+- **Dónde:** `src/function_caller.py` (`value_matches` 8-28, `resolve` 97-111).
+- **Qué pasa:** el decoder puede emitir `2` (int) o `2.0` (float); lo que salga se
+  escribe tal cual. Salida actual: `{"a": 2, "b": 3}`. El subject muestra `2.0`,
+  `3.0`.
+- **Por qué falla:** el grader hace `assert isinstance(a, float)`; en Python `int`
+  no es `float`, así que `{"a": 2}` lo tumba (tests 1 y 2) aunque la función sea
+  la correcta.
+- **Arreglo:** tras validar, si el tipo declarado es `"number"` y el valor es
+  `int` (y no `bool`), hacer `float(value)`.
+  - **NO** tocar `"integer"` (test 5 usa `years: int`).
+  - **NO** tocar `"boolean"` (`bool` es subclase de `int`).
+- **Riesgo:** muy bajo. Solo afecta a la serialización, no a la selección ni al
+  decoder.
+
+```python
+for param_name, value in parameters.items():
+    definition = selected.parameters[param_name]
+    if definition.type == "number" and isinstance(value, int) and not isinstance(value, bool):
+        parameters[param_name] = float(value)
+```
+
+## 5) Bug del terminador de string (se pierde texto)
+
+- **Dónde:** `src/constrained_decoder.py`, `generate_string` (157-188) y
+  `string_terminators` (123-128).
+- **Qué pasa:** los terminadores son **cualquier token que contenga** `"` o `\n`
+  (`search_any_character('"\n')`), no solo la comilla suelta. Al detectar el
+  terminador se descarta **el token entero**.
+- **Evidencia (vocab Qwen3-0.6B, 151.643 tokens):** hay **1344 tokens** con comilla
+  y muchos llevan texto pegado por delante: id `9940 : )"`, `1189 : ."`,
+  `1335 : ,"`, `788 : ":"`, `899 : ")"`...
+- **Consecuencia:** si el modelo cierra con `)"`, se pierde el `)`
+  (`INSERT ... (1, 2, 3)` → `INSERT ... (1, 2, 3`). Test 7.
+- **Arreglo (T2):** al caer un terminador, decodificarlo y conservar lo anterior a
+  la primera `"`/`\n`, re-encodeando el prefijo:
+
+```python
+if selected in self.string_terminators:
+    text = self.model.decode([selected])      # p.ej. ')"'  o  '."'
+    cut = len(text)
+    for j, ch in enumerate(text):
+        if ch == '"' or ch == '\n':
+            cut = j
+            break
+    prefix = text[:cut]                        # ')'  o  '.'
+    if prefix:
+        value_tokens.extend(self.model.encode(prefix).flatten().tolist())
+    return value_tokens
+```
+
+- **Alternativa simple:** terminar solo con la comilla suelta (token id 1) y
+  prohibir como terminador los compuestos. Menos fiel a la preferencia del modelo.
+- **Nota:** el salto de línea (`Ċ`) tiene el mismo problema (un token `abc\n`
+  perdería `abc`); el prefijo también lo cubre. Un `\n` crudo dentro de un string
+  es JSON inválido, por eso se usa como terminador.
+
+## 6) Máscara de strings prohíbe `\ { } [ ]`
+
+- **Dónde:** `src/constrained_decoder.py:123-126`
+  (`if not any(char in token for char in "{}[]\\")`).
+- **Qué pasa:** ningún token con `\ { } [ ]` puede usarse dentro de un string →
+  el decoder hace **imposible** esos caracteres.
+- **Consecuencia:** valores irrecuperables: rutas Windows `C:\Users\...`, regex
+  `\d+`, clases `[aeiou]`, plantillas `{}` (tests 9-11).
+- **Clave:** `{ } [ ]` **no** necesitan escape en JSON (son legales dentro de un
+  string). Lo único delicado es `"` y `\`:
+  - `"` literal → debe ir como `\"` (si no, cierra el string).
+  - `\` literal → debe ir como `\\` (si no, `json.loads` lo lee como escape).
+  - En el vocab existen: `\"` (id 2105), `\\` (id 3422), `\` (id 59).
+- **Opciones:**
+  - **A (recomendada):** abrir la máscara para `{ } [ ]`; para `"` y `\`, permitir
+    solo las formas escapadas (`\"`, `\\`) como contenido y reservar la comilla
+    suelta como terminador. Requiere arreglar **antes** el punto 5.
+  - **B (T4):** extracción determinista del valor desde el prompt
+    (parser-assisted; el LLM solo elige la función). Resuelve tests 8-11 +
+    `.strip()` (test 8). Riesgo: parecer que se hardcodea el test set; solo si es
+    genérico por tipo.
+  - **C:** capa de escapado propia antes de `json.loads`. Más frágil que A.
+- **Orden:** arreglar **5** antes de ampliar la máscara, o se agravan los
+  truncamientos.
+
+## Dependencias entre los tres
+
+| # | Naturaleza | Arregla | Riesgo |
+|---|---|---|---|
+| 4 | Post-proceso de tipos | `number` = float → tests 1, 2 | Muy bajo |
+| 5 | Bug real del decoder | pérdida de texto al cerrar → test 7 | Medio |
+| 6 | Límite de diseño | `\ { } [ ]` en strings → tests 9-11 | Medio-alto |
+
+Orden: **4** (aislado) → **5** (cierre fiable) → **6** (ampliar máscara sin
+regresiones). Los tres mantienen la garantía de JSON 100% válido si se conserva el
+masking y el escapado (probar con un valor que contenga `)`, `\` y comillas).
