@@ -9,11 +9,14 @@ requires-python = ">=3.10"
 dependencies = [
 	"numpy",
 	"pydantic",
-    "llm_sdk"
+    "llm_sdk",
+    "flake8",
+    "mypy"
 	]
 
 [tool.mypy]
 	strict = true
+    namespace_packages = false
 
 # mypy
 [[tool.mypy.overrides]]

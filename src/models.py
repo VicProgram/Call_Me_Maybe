@@ -11,17 +11,6 @@ class ParameterDefinition(BaseModel):
     type: str
 
 
-class ParameterType(str, Enum):
-    """Enumeration of supported parameter types.
-
-    Values:
-        NUMBER: Represents a numeric parameter.
-        STRING: Represents a string parameter.
-    """
-    NUMBER = "number"
-    STRING = "string"
-
-
 class FunctionDefinition(BaseModel):
     """Definition of a callable function.
 
@@ -42,12 +31,12 @@ class FunctionCall(BaseModel):
 
     Attributes:
         prompt: The original user prompt in natural language.
-        fn_name: The name of the selected function.
-        args: A dictionary mapping argument names to their extracted values.
+        name: The name of the selected function.
+        parameters: A dictionary mapping argument names to their values.
     """
     prompt: str
-    fn_name: str
-    args: dict[str, object]
+    name: str
+    parameters: dict[str, object]
 
 
 class TestPrompt(BaseModel):

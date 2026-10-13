@@ -18,10 +18,17 @@ def parse_args() -> argparse.Namespace:
         description="LLM Function Calling System - call me maybe"
     )
     parser.add_argument(
+        "--functions_definition",
+        type=Path,
+        default=None,
+        help="Fichero JSON con las definiciones de funciones "
+        "(default: <input>/functions_definition.json)"
+    )
+    parser.add_argument(
         "--input",
         type=Path,
         default=Path("data/input"),
-        help="Directorio de entrada (default: data/input)"
+        help="Directorio o fichero de entrada (default: data/input)"
     )
     parser.add_argument(
         "--output",
@@ -45,17 +52,22 @@ def main() -> int:
     args = parse_args()
 
     if args.input.is_dir():
-        definitions_path = args.input / "functions_definition.json"
+        default_definitions = args.input / "functions_definition.json"
         tests_path = args.input / "function_calling_tests.json"
     else:
-        definitions_path = args.input.parent / "functions_definition.json"
+        default_definitions = args.input.parent / "functions_definition.json"
         tests_path = args.input
+
+    if args.functions_definition is not None:
+        definitions_path = args.functions_definition
+    else:
+        definitions_path = default_definitions
 
     print("Cargando archivos de entrada...")
     try:
         functions = load_function_def(definitions_path)
         prompts = load_prompt(tests_path)
-    except (FileNotFoundError, ValueError) as e:
+    except (FileNotFoundError, ValueError, TypeError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
@@ -84,7 +96,7 @@ def main() -> int:
         try:
             result = caller.resolve(prompt, functions)
             results.append(result)
-            print(f"  ✓ {result.fn_name}({result.args})")
+            print(f"  ✓ {result.name}({result.parameters})")
         except Exception as e:
             print(f"  ✗ Error: {e}", file=sys.stderr)
             errors += 1

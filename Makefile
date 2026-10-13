@@ -8,7 +8,9 @@ export HF_HOME:=$(STORAGE)/huggingface
 export HF_HUB_CACHE:=$(HF_HOME)/hub
 
 export TMPDIR:=$(STORAGE)/tmp
-VENV:=$(UV_PROJECT_ENVIRONMENT)
+
+export VIRTUAL_ENV:=$(UV_PROJECT_ENVIRONMENT)
+
 
 MYPY_FLAGS  = --warn-return-any \
               --warn-unused-ignores \
@@ -26,6 +28,9 @@ install:
 
 run:
 	uv run python -m src
+
+debug:
+	uv run python -m pdb -m src
 
 lint:
 	@echo "Comprobando linter..."
@@ -57,10 +62,9 @@ clean:
 	find . -name "*.pyc" -delete
 	find . -name "*.pyo" -delete
 	rm -rf data/output
-	rm -f $(OUTPUT_FILE)
 	@echo "\nRemoving virtual environment and caches...\n"
 	rm -rf .mypy_cache .pytest_cache .ruff_cache
-	rm -rf $(VENV)
+	rm -rf $(VIRTUAL_ENV)
 	@echo "\nCleaning uv cache\n"
 	uv cache clear
 
@@ -70,4 +74,4 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all install run lint lint-strict clean fclean re
+.PHONY: all install run debug lint lint-strict clean fclean re

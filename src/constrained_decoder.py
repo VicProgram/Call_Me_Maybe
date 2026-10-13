@@ -66,9 +66,14 @@ def log_softmax(logits: list[float] | list[int]) -> list[float]:
     Returns:
         An array with the log-probability of each token.
     """
-    max_logit = np.max(logits)
-    shifted = logits - max_logit
-    return shifted.tolist()
+
+    logits_arr = np.asarray(logits, dtype=np.float64)
+    max_logit = np.max(logits_arr)
+    shifted = logits_arr - max_logit
+    log_sum_exp = np.log(np.sum(np.exp(shifted)))
+    result = shifted - log_sum_exp
+    probs: list[float] = result.tolist()
+    return probs
 
 
 class JSONGenerator:
@@ -175,7 +180,7 @@ class JSONGenerator:
             raise ValueError("No valid function found")
         param_names = list(selected_fun.parameters.keys())
         param_count = 0
-        opening = '{"prompt": ' + json.dumps(prompt) + ', "fn_name": "'
+        opening = '{"prompt": ' + json.dumps(prompt) + ', "name": "'
         output_tokens = self.model.encode(opening).flatten().tolist()
         prompt_ids += output_tokens
 
@@ -224,10 +229,10 @@ class JSONGenerator:
             case JSONState.AFTER_NAME:
                 if not param_names:
                     fixed_txt = self.model.encode(
-                        '", "args": {}').flatten().tolist()
+                        '", "parameters": {}').flatten().tolist()
                     return fixed_txt, JSONState.END
                 fixed_txt = self.model.encode(
-                  '", "args": {').flatten().tolist()
+                  '", "parameters": {').flatten().tolist()
 
                 selected = fixed_txt
 

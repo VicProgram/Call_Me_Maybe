@@ -57,5 +57,6 @@ class FunctionCaller:
             raise ValueError(f"JSON inválido generado: {e} ({raw_json!r})")
 
         return FunctionCall(
-            prompt=prompt, fn_name=data["fn_name"], args=data["args"]
+            prompt=prompt, name=data["name"],
+            parameters=data["parameters"]
             )

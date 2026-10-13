@@ -123,15 +123,14 @@ def json_exporter(
     Raises:
         ValueError: If there is an error writing the output file.
     """
-    if not os.path.exists(func_call_path):
-        os.makedirs(
-            os.path.dirname(func_call_path), exist_ok=True
-            )
+    parent_dir = os.path.dirname(func_call_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
 
     func_dict = []
 
     for item in func_call_obj:
-        new_item = item.dict()
+        new_item = item.model_dump()
         func_dict.append(new_item)
 
     with open(func_call_path, "w", encoding="utf-8") as f:

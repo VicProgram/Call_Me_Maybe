@@ -5,7 +5,7 @@
 **Function calling for LLMs through constrained decoding.**
 
 Call Me Maybe turns a natural-language request into a structured function call
-(`{"prompt": ..., "fn_name": ..., "args": {...}}`) using a small language model
+(`{"prompt": ..., "name": ..., "parameters": {...}}`) using a small language model
 (`Qwen/Qwen3-0.6B`) whose output is **never** allowed to become malformed JSON.
 Instead of trusting the model to produce valid JSON, a finite state machine
 forces every structural token and restricts the vocabulary at each generation
@@ -47,7 +47,7 @@ user prompts, the program must, for each prompt:
 1. **Select** the most appropriate function from the available definitions.
 2. **Extract** the argument values required by that function.
 3. **Emit** a well-formed JSON object with exactly three keys: `prompt`,
-   `fn_name` and `args`.
+   `name` and `parameters`.
 
 The core idea is to *decouple formatting from reasoning*. The decoder owns the
 syntax (braces, quotes, commas, key names, token types); the model only owns the
@@ -103,7 +103,7 @@ The user prompt is already known, so it is **written verbatim** into the output
 using `json.dumps` instead of being regenerated:
 
 ```python
-opening = '{"prompt": ' + json.dumps(prompt) + ', "fn_name": "'
+opening = '{"prompt": ' + json.dumps(prompt) + ', "name": "'
 ```
 
 This is the same principle as the rest of the decoder: force what is known, ask
@@ -118,7 +118,7 @@ The generator loops while the state is not `FINISHED`. Each call to
 | State | Source | Emits |
 |---|---|---|
 | `FN_NAME` | Forced | The selected function name |
-| `AFTER_NAME` | Forced | `", "args": {` — or `", "args": {}` if the function takes no parameters |
+| `AFTER_NAME` | Forced | `", "parameters": {` — or `", "parameters": {}` if the function takes no parameters |
 | `PARAM_KEY` | Forced | `"param": ` — or `"param": "` when the parameter is a string |
 | `PARAM_VALUE` | **Model** | The argument value, under the mask of its type |
 | `NEXT_PARAM` | Forced | `, "next": ` — or the closing brace when no parameters remain |
@@ -166,7 +166,7 @@ around it is a safety net, not the main mechanism.
   a hard structural guarantee.
 
 - **A finite state machine instead of a formal JSON grammar.** The output schema
-  is *fixed* (`prompt`, `fn_name`, `args` with known keys), so a small explicit
+  is *fixed* (`prompt`, `name`, `parameters` with known keys), so a small explicit
   FSM is simpler, faster to reason about, and easier to debug than a general
   grammar engine. It also keeps the code free of external parsing libraries.
 
@@ -218,7 +218,7 @@ Precomputing the masks means the one-off vocabulary scan does not repeat per
 prompt.
 
 **Reliability.** The structural guarantees are deterministic and independent of
-the model: valid JSON, the three exact keys, a `fn_name` drawn from the provided
+the model: valid JSON, the three exact keys, a `name` drawn from the provided
 definitions, and argument values respecting their declared type. The residual
 risk is model-side (wrong function or wrong value) plus one decoder edge case
 noted below (the `number` mask permits characters, not a full numeric grammar),
@@ -280,15 +280,14 @@ and manual inspection — each layer checks a different property:
    `data/output/function_calling_results.json`.
 
 2. **Format checks (decoder guarantees).** For every result: the file parses
-   with `json.loads`; each entry has exactly the keys `prompt`, `fn_name`,
-   `args`; `fn_name` is one of the available functions; each argument matches
+   with `json.loads`; each entry has exactly the keys `prompt`, `name`,
+   `parameters`; `name` is one of the available functions; each argument matches
    the declared type (numbers are JSON numbers, not `"2"`).
 
-3. **Correctness checks (model behaviour).** Results are compared against the
-   expected function and arguments in
-   `moulinette/data/correction/function_calling_corrections.json`, starting from
+3. **Correctness checks (model behaviour).** Results are inspected against the
+   expected function and arguments, starting from
    the easier cases (arithmetic, greeting, reversal) before the regex cases.
-   Comparing against the corrections is how the model-side errors described in
+   Comparing them with the expectations is how the model-side errors described in
    *Performance analysis* were identified as value errors, not format errors.
 
 4. **Prompt fidelity.** The `prompt` field of each result must be byte-identical
@@ -335,18 +334,26 @@ from the Hugging Face Hub on first run.
 make run          # equivalent to: uv run python -m src
 ```
 
-With explicit paths:
+With explicit paths (the form used by the subject):
 
 ```bash
 uv run python -m src \
-    --input data/input \
+    --functions_definition data/input/functions_definition.json \
+    --input data/input/function_calling_tests.json \
     --output data/output/function_calling_results.json
 ```
 
 `--input` may be a directory (in which case `functions_definition.json` and
 `function_calling_tests.json` are read from it) or a single prompts file (in
-which case the definitions are expected next to it). `--output` is the path of
-the results file; missing parent directories are created automatically.
+which case the definitions are expected next to it). `--functions_definition`
+overrides the definitions file explicitly, and `--output` is the path of the
+results file; missing parent directories are created automatically.
+
+### Debugging
+
+```bash
+make debug        # equivalent to: uv run python -m pdb -m src
+```
 
 ### Linting
 
@@ -384,7 +391,8 @@ arguments), followed by a summary with the number of successes and errors.
 
 ```bash
 uv run python -m src \
-    --input moulinette/data/input \
+    --functions_definition data/input/functions_definition.json \
+    --input data/input/function_calling_tests.json \
     --output /tmp/opencode/results.json
 ```
 
@@ -408,8 +416,8 @@ Resulting entry in the output file:
 ```json
 {
   "prompt": "What is the sum of 2 and 3?",
-  "fn_name": "fn_add_numbers",
-  "args": { "a": 2, "b": 3 }
+  "name": "fn_add_numbers",
+  "parameters": { "a": 2, "b": 3 }
 }
 ```
 
@@ -425,7 +433,7 @@ caller = FunctionCaller(model)
 functions = load_function_def("data/input/functions_definition.json")
 
 call = caller.resolve("Greet shrek", functions)
-print(call.fn_name, call.args)                # fn_greet {'name': 'shrek'}
+print(call.name, call.parameters)             # fn_greet {'name': 'shrek'}
 ```
 
 ---
@@ -461,14 +469,14 @@ A list of objects with a `prompt` key (plain strings are also accepted):
 
 ### Results — `data/output/function_calling_results.json`
 
-Each entry has exactly three keys: `prompt`, `fn_name` and `args`.
+Each entry has exactly three keys: `prompt`, `name` and `parameters`.
 
 ```json
 [
   {
     "prompt": "What is the sum of 2 and 3?",
-    "fn_name": "fn_add_numbers",
-    "args": { "a": 2, "b": 3 }
+    "name": "fn_add_numbers",
+    "parameters": { "a": 2, "b": 3 }
   }
 ]
 ```
@@ -490,8 +498,6 @@ data/
   input/                  Function definitions and test prompts
   output/                 Generated results
 llm_sdk/                  Local inference SDK wrapping Hugging Face models
-moulinette/data/          Provided test inputs and expected corrections
-GUIDES/                   Step-by-step teaching guide (Spanish)
 ```
 
 ---
@@ -502,6 +508,7 @@ GUIDES/                   Step-by-step teaching guide (Spanish)
 |---|---|
 | `make install` | Install dependencies (`uv sync`) |
 | `make run` | Run the pipeline (`uv run python -m src`) |
+| `make debug` | Run the pipeline under `pdb` (`uv run python -m pdb -m src`) |
 | `make lint` | Run flake8 and mypy |
 | `make lint-strict` | Run flake8 and mypy in `--strict` mode |
 | `make clean` | Remove caches and the output directory |
@@ -548,8 +555,8 @@ replacement for understanding. Concretely:
 - **Debugging.** AI assisted in diagnosing the prompt-echo bug (forcing the
   `prompt` field with `json.dumps`) and the terminator/mask issues described in
   *Challenges encountered*.
-- **Documentation.** AI helped write the docstrings throughout `src/`, the
-  teaching guide in `GUIDES/` and the original version of this README.
+- **Documentation.** AI helped write the docstrings throughout `src/` and the
+  original version of this README.
 - **This document.** This README was restructured and rewritten with AI
   assistance to meet the format required by the subject.
 
