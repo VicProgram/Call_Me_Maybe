@@ -16,8 +16,8 @@ MYPY_FLAGS  = --warn-return-any \
               --disallow-untyped-defs \
               --check-untyped-defs
 
-FLAKE8_EXCLUDE = --exclude=data,llm_sdk,venv
-MYPY_EXCLUDE   = --exclude data --exclude llm_sdk --exclude venv
+FLAKE8_EXCLUDE = --exclude=data,llm_sdk,.venv
+MYPY_EXCLUDE   = --exclude data --exclude llm_sdk --exclude .venv
 
 all: install run
 

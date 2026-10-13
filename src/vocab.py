@@ -43,9 +43,9 @@ class VocabIndex:
         except Exception:
             raise FileNotFoundError("JSON not founded")
 
-        return data
+        return data  # type: ignore[no-any-return]
 
-    def create_dict(self, data: dict) -> None:
+    def create_dict(self, data: dict[str, Any]) -> None:
         """Create bidirectional token-to-id and id-to-token mappings.
 
         Args:

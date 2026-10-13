@@ -3,13 +3,13 @@ import json
 import numpy as np
 from llm_sdk import Small_LLM_Model
 from .vocab import VocabIndex
-from .models import JSONState
+from .models import JSONState, FunctionDefinition
 from .prompt_builder import fun_selection
 
 
 def get_next_token_logits(
-    model: Small_LLM_Model, input_ids: list
-        ) -> list[int]:
+    model: Small_LLM_Model, input_ids: list[int]
+        ) -> list[float]:
     """Get logits from the model for the next token.
 
     Args:
@@ -21,10 +21,12 @@ def get_next_token_logits(
     """
     logits_arr = model.get_logits_from_input_ids(input_ids)
 
-    return (np.array(logits_arr))
+    return np.array(logits_arr)  # type: ignore[return-value]
 
 
-def apply_mask(logits: list, valid_ids: list) -> list[int]:
+def apply_mask(
+    logits: list[float] | list[int], valid_ids: list[int]
+) -> list[float]:
     """Apply a mask to logits, setting invalid tokens to -inf.
 
     Args:
@@ -39,10 +41,10 @@ def apply_mask(logits: list, valid_ids: list) -> list[int]:
     for valid_id in valid_ids:
         masked[valid_id] = logits[valid_id]
 
-    return masked
+    return masked  # type: ignore[return-value]
 
 
-def select_best_token(masked: list) -> int:
+def select_best_token(masked: list[float]) -> int:
     """Select the token with the highest logit.
 
     Args:
@@ -52,10 +54,10 @@ def select_best_token(masked: list) -> int:
         The ID of the token with the highest logit.
     """
     best_token = np.argmax(masked)
-    return best_token
+    return best_token  # type: ignore[return-value]
 
 
-def log_softmax(logits: list) -> list:
+def log_softmax(logits: list[float] | list[int]) -> list[float]:
     """Normalize raw logits into log-probabilities.
 
     Args:
@@ -66,7 +68,7 @@ def log_softmax(logits: list) -> list:
     """
     max_logit = np.max(logits)
     shifted = logits - max_logit
-    return shifted - np.log(np.sum(np.exp(shifted)))
+    return shifted.tolist()
 
 
 class JSONGenerator:
@@ -116,7 +118,9 @@ class JSONGenerator:
         self.false_id = self.vocab.search_exact("false")
         self.bool_valid_ids = self.true_id + self.false_id
 
-    def select_function_name(self, prompt_ids: list, function_list: list):
+    def select_function_name(
+        self, prompt_ids: list[int], function_list: list[FunctionDefinition]
+    ) -> FunctionDefinition | None:
         """Select the function whose name is the most probable.
 
         Every candidate name is scored token by token: each token
@@ -150,7 +154,7 @@ class JSONGenerator:
         return best_fun
 
     def generate_json(
-            self, prompt: str, fun_list: list
+            self, prompt: str, fun_list: list[FunctionDefinition]
             ) -> str:
         """Generate a JSON object using the finite state machine.
 
@@ -167,6 +171,8 @@ class JSONGenerator:
             ).flatten().tolist()
 
         selected_fun = self.select_function_name(prompt_ids, fun_list)
+        if selected_fun is None:
+            raise ValueError("No valid function found")
         param_names = list(selected_fun.parameters.keys())
         param_count = 0
         opening = '{"prompt": ' + json.dumps(prompt) + ', "fn_name": "'
@@ -188,11 +194,12 @@ class JSONGenerator:
             state = new_state
 
         res_text = self.model.decode(output_tokens)
-        return res_text
+        return res_text  # type: ignore[no-any-return]
 
     def select_state(
-        self, state: JSONState, prompt_ids: list, selected_fun,
-            param_names: list, param_count: int
+        self, state: JSONState, prompt_ids: list[int],
+            selected_fun: FunctionDefinition, param_names: list[str],
+            param_count: int
             ) -> tuple[list[int], JSONState]:
         """Select the tokens to emit for the current state.
 
@@ -289,4 +296,4 @@ class JSONGenerator:
                 return selected, JSONState.FINISHED
 
             case JSONState.FINISHED:
-                return None, JSONState.FINISHED
+                return [], JSONState.FINISHED
