@@ -149,17 +149,12 @@ class JSONGenerator:
         self.model = model
         self.vocab = vocab
 
-        # atomic token groups shared by the numeric masks
         self.digit_ids = self.vocab.search_characters("0123456789")
         self.dot_id = self.vocab.search_exact(".")
         self.minus_id = self.vocab.search_exact("-")
         self.terminator_ids = self.vocab.search_characters(" ,\n\t")
         self.max_value_len = 512
 
-        # strings: clasificamos cada token por el texto que produce al
-        # decodificarlo (una sola vez, cuesta ~1 s sobre 151k tokens). Se
-        # separan los tokens que son contenido válido de los que cierran el
-        # string. (Arreglo 5: antes se prohibía por completo " \ { } [ ]".)
         content_ids: list[int] = []
         terminator_ids: list[int] = []
         for token_id in self.vocab.token_to_id.values():
@@ -171,8 +166,7 @@ class JSONGenerator:
             elif _STRING_CHUNK.fullmatch(text[:cut]):
                 terminator_ids.append(token_id)
         self.string_terminators = terminator_ids
-        # Los terminadores también deben poder elegirse; si no, el modelo no
-        # tendría forma de cerrar el string.
+
         self.string_valid_ids = content_ids + terminator_ids
 
         # booleans
@@ -180,7 +174,6 @@ class JSONGenerator:
             self.vocab.search_exact("true") + self.vocab.search_exact("false")
         )
 
-        # one value generator per supported parameter type
         self.value_generators: dict[
             str, Callable[[list[int]], list[int]]
         ] = {
@@ -190,7 +183,6 @@ class JSONGenerator:
             "integer": lambda ids: self.generate_numeric(ids, integer=True),
         }
 
-        # fail fast if the vocabulary cannot build a non-empty mask
         if not self.digit_ids:
             raise ValueError("Empty mask: no valid digit tokens")
         if not self.dot_id or not self.minus_id:
@@ -228,12 +220,6 @@ class JSONGenerator:
             selected = select_best_token(masked)
 
             if selected in self.string_terminators:
-                # Arreglo 4: el token que cierra el string puede traer texto
-                # pegado delante (p. ej. ")" en el token ')"'). Antes se
-                # tiraba el token entero y se perdía ese texto. Ahora nos
-                # quedamos con lo anterior a la comilla y lo añadimos al
-                # valor. Ese prefijo ya es contenido JSON válido (lo garantiza
-                # la clasificación hecha en __init__).
                 text = self.model.decode([selected])
                 prefix = text[:_first_unescaped_quote(text)]
                 if prefix:
@@ -312,16 +298,19 @@ class JSONGenerator:
         Returns:
             The list of token IDs allowed in this state.
         """
-        if state == "start":
-            return self.minus_id + self.digit_ids
-        if state == "sign":
-            return self.digit_ids
-        if state == "int":
-            allowed = self.digit_ids + self.terminator_ids
-            return allowed if integer else allowed + self.dot_id
-        if state == "dot":
-            return self.digit_ids
-        return self.digit_ids + self.terminator_ids
+
+        match state:
+            case "start":
+                return self.minus_id + self.digit_ids
+            case "sign":
+                return self.digit_ids
+            case "int":
+                allowed = self.digit_ids + self.terminator_ids
+                return allowed if integer else allowed + self.dot_id
+            case "dot":
+                return self.digit_ids
+            case _:
+                return self.digit_ids + self.terminator_ids
 
     def numeric_next(self, state: str, token_id: int) -> str:
         """Return the next numeric state after emitting a token.
@@ -333,15 +322,15 @@ class JSONGenerator:
         Returns:
             The next state.
         """
-        if state == "start":
-            return "sign" if token_id in self.minus_id else "int"
-        if state == "sign":
-            return "int"
-        if state == "int":
-            return "dot" if token_id in self.dot_id else "int"
-        if state == "dot":
-            return "frac"
-        return "frac"
+        match state:
+            case "start":
+                return "sign" if token_id in self.minus_id else "int"
+            case "sign":
+                return "int"
+            case "int":
+                return "dot" if token_id in self.dot_id else "int"
+            case _:
+                return "frac"
 
     def select_function_name(
         self, prompt_ids: list[int], function_list: list[FunctionDefinition]

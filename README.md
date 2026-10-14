@@ -139,16 +139,17 @@ supported:
 |---|---|---|
 | `number` | digits, one optional leading `-`, one optional `.` (sub-state machine) | a token made only of ` ,\n\t` |
 | `integer` | like `number` but the `.` is never allowed | a token made only of ` ,\n\t` |
-| `string` | tokens containing none of `{ } [ ] \` | a token containing `"` or a newline |
+| `string` | tokens whose decoded text is valid string content: any char except a bare `"`, a bare `\` or a raw control char (`{ } [ ]` are legal; `\"`, `\\`, `\n`, `\uXXXX`… are accepted) | a token containing an unescaped `"` (the text before the quote is kept) |
 | `boolean` | the exact tokens `true` / `false` | none (one token finishes the value) |
 
 Terminators are *added to the allowed set* so the model is able to choose them;
 otherwise the mask would forbid the very token that ends the value and the loop
-would never terminate. Note the intentional asymmetry between numbers
-(`search_characters`: tokens made *only* of separators) and strings
-(`search_any_character`: tokens that *contain* a quote) — a number must not
-swallow the comma that separates parameters, whereas a string may end with a
-quote attached to text.
+would never terminate. Numbers use `search_characters`, so their terminators are
+tokens made *only* of separators: a number must not swallow the comma that
+separates parameters. Strings, by contrast, are classified by decoding every
+token once and matching its text against `_STRING_CHUNK`, so a string may end
+with a quote attached to text; when that happens, the text before the quote is
+kept as content and only the quote closes the value.
 
 Numbers are not masked with a single flat set: a small sub-state machine
 (`start → sign → int → dot → frac`) changes the mask at every step, so a
@@ -162,7 +163,11 @@ raises an error instead of silently falling back to another one.
 The emitted tokens are turned back into text with `model.decode`, then parsed
 with `json.loads` in `FunctionCaller.resolve`. Since every structural token was
 validated by the FSM, this parse is expected to always succeed; the `try/except`
-around it is a safety net, not the main mechanism.
+around it is a safety net, not the main mechanism. After parsing, every value is
+re-checked against its declared type (`bool` is a subclass of `int`, so a
+boolean can never pass as an `integer`), a `number` is coerced to `float` so
+`2` is emitted as `2.0`, and an unexpected parameter name or function name is
+rejected.
 
 ---
 
@@ -208,10 +213,13 @@ around it is a safety net, not the main mechanism.
 function **selection** is correct in all cases and the output is valid JSON in
 all cases — those two are guaranteed by construction and verified in
 `data/output/function_calling_results.json`. Argument **extraction** is correct
-for the arithmetic, greeting, string-reversal and square-root cases. The regex
-cases are where the model — not the decoder — struggles: for example
-`"Replace all vowels in 'Programming is fun' with asterisks"` may produce
-`".*? vowels.*?"` instead of `"[aeiouAEIOU]"`. All of those values are valid
+for the arithmetic, greeting, string-reversal and square-root cases — including
+the string arguments, which now keep whatever text sits in front of their
+closing quote. The regex cases are where the model — not the decoder —
+struggles: for example `"Replace all vowels in 'Programming is fun' with
+asterisks"` yields the regex `"([aeiouAEIOU])"` with a replacement `" *"` (a
+stray leading space), and `"Substitute the word 'cat' with 'dog' …"` yields the
+greedy pattern `"cat.*cat"` instead of `"cat"`. All of those values are valid
 JSON strings and valid strings for the argument type; they are simply the wrong
 *choice*. This is the expected boundary: the decoder guarantees form, the model
 is responsible for content.
@@ -251,12 +259,16 @@ GPU/MPS and `float32` on CPU, so the whole pipeline runs comfortably on a laptop
   allowed set and treating them as terminators, so the value ends exactly at the
   comma before the next key.
 
-- **String terminators must be choosable.** A string ends on a quote, but the
-  left brace `{` must never appear inside a value. **Solved** by allowing all
-  tokens that contain no structural characters `{ } [ ] \` plus all tokens that
-  contain a quote or newline, and closing the string when one of the latter is
-  picked. Using `search_any_character` here (rather than `search_characters`)
-  lets strings end when the closing quote is glued to text.
+- **String terminators, and strings that need any text.** A string ends on a
+  quote, but an early mask simply forbade `{ } [ ] \` inside a value, which made
+  Windows paths, `\d+` regexes, character classes and templates impossible to
+  emit. **Solved** by classifying every token from its decoded text with
+  `_STRING_CHUNK`: content tokens must be valid JSON-string content (any
+  character except a bare `"`, a bare `\` or a raw control character; `{ } [ ]`
+  are legal and escapes such as `\"`, `\\`, `\n` or `\uXXXX` are accepted),
+  while a terminator is any token with an unescaped `"` whose text before the
+  quote is valid content. The quote is what closes the string, so text glued in
+  front of it (`)"`) is preserved instead of discarded.
 
 - **Length bias in selection.** Summing raw logits favored longer names.
   **Solved** by switching to summed log-softmax log-probabilities and by scoring
@@ -274,15 +286,15 @@ GPU/MPS and `float32` on CPU, so the whole pipeline runs comfortably on a laptop
 
 - **Vocabulary handling.** The model ships a large `vocab.json`; it is loaded
   once into a `VocabIndex` with bidirectional `token⇄id` maps and specialized
-  searches (`search_exact`, `search_characters`, `search_any_character`) so mask
-  construction is a one-time cost.
+  searches (`search_exact`, `search_characters`) so mask construction is a
+  one-time cost.
 
 ---
 
 ## Testing strategy
 
-Validation combines the provided test set, the correction data, static analysis,
-and manual inspection — each layer checks a different property:
+Validation combines the provided test set, static analysis and manual
+inspection — each layer checks a different property:
 
 1. **End-to-end run.** `make run` processes
    `data/input/function_calling_tests.json` against
@@ -312,15 +324,9 @@ and manual inspection — each layer checks a different property:
    `apply_mask`, `select_best_token`, the `VocabIndex` searches) were exercised
    in isolation to confirm the masking logic before wiring it into the FSM.
 
-7. **Unit tests.** `make test` runs `tests/test_value_types.py` with the standard
-   library `unittest` (no extra dependency). It covers the type schema (`integer`
-   accepted, unknown types rejected), the post-parse validator — including the
-   `bool`/`int` subclass trap — and the numeric sub-state machine (`integer`
-   cannot emit a dot, no double sign, no empty value). It uses a fake vocabulary
-   and a scripted model, so it runs without downloading the LLM.
-
-`make test` runs the suite; `make lint` and `make lint-strict` also lint and
-type-check `tests/`.
+`make lint` and `make lint-strict` run the static checks above; the rest of the
+verification procedure is the end-to-end run plus manual inspection of the
+results.
 
 ---
 
@@ -457,7 +463,7 @@ Resulting entry in the output file:
 {
   "prompt": "What is the sum of 2 and 3?",
   "name": "fn_add_numbers",
-  "parameters": { "a": 2, "b": 3 }
+  "parameters": { "a": 2.0, "b": 3.0 }
 }
 ```
 
@@ -520,7 +526,7 @@ Each entry has exactly three keys: `prompt`, `name` and `parameters`.
   {
     "prompt": "What is the sum of 2 and 3?",
     "name": "fn_add_numbers",
-    "parameters": { "a": 2, "b": 3 }
+    "parameters": { "a": 2.0, "b": 3.0 }
   }
 ]
 ```
@@ -542,7 +548,6 @@ data/
   input/                  Function definitions and test prompts
   output/                 Generated results
 llm_sdk/                  Local inference SDK wrapping Hugging Face models
-tests/                    Unit tests (standard library unittest)
 ```
 
 ---
@@ -551,12 +556,12 @@ tests/                    Unit tests (standard library unittest)
 
 | Target | Description |
 |---|---|
+| `make all` | `install` followed by `run` |
 | `make install` | Install dependencies (`uv sync`) |
 | `make run` | Run the pipeline (`uv run python -m src`) |
 | `make debug` | Run the pipeline under `pdb` (`uv run python -m pdb -m src`) |
 | `make lint` | Run flake8 and mypy |
 | `make lint-strict` | Run flake8 and mypy in `--strict` mode |
-| `make test` | Run the unit tests (`unittest`) |
 | `make clean` | Remove caches and the output directory |
 | `make fclean` | `clean` plus the local uv/HF storage |
 | `make re` | `fclean` followed by `all` |

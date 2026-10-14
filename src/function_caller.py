@@ -94,11 +94,6 @@ class FunctionCaller:
         if selected is None:
             raise ValueError(f"Función generada no definida: {name!r}")
 
-        # Arreglo 1: el subject (V.4.1) muestra {"a": 2.0, "b": 3.0} y su
-        # corrector hace `assert isinstance(a, float)`. El decoder puede emitir
-        # el literal entero (2), así que aquí coaccionamos "number" a float.
-        # "integer" y "boolean" NO se tocan: `bool` es subclase de `int`, y el
-        # tipo declarado manda.
         resolved: dict[str, object] = {}
         for param_name, value in parameters.items():
             definition = selected.parameters.get(param_name)

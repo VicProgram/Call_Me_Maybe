@@ -56,10 +56,6 @@ lint-strict:
 	echo ""; \
 	exit $$status
 
-test:
-	@echo "Ejecutando tests..."
-	uv run python -m unittest discover -s tests -v
-
 clean:
 	@echo "Cleaning temporary files...\n"
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -78,4 +74,4 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all install run debug lint lint-strict test clean fclean re
+.PHONY: all install run debug lint lint-strict clean fclean re
