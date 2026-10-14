@@ -73,7 +73,7 @@ written verbatim) or *model-driven* (the model picks tokens under a mask).
 
 ### Step 1 — Build the selection prompt
 
-`fun_selection` (`src/prompt_builder.py`) builds a single text prompt that lists
+`fun_select_prompt` (`src/prompt_builder.py`) builds a single text prompt that lists
 the available functions with their descriptions and ends with the user request
 and the cue `Function to call: `. The model is expected to continue with a
 function name.
@@ -132,12 +132,13 @@ handled gracefully.
 ### Step 5 — Mask by parameter type
 
 The token masks are precomputed once in `JSONGenerator.__init__`, because
-scanning the whole vocabulary on every step would be wasteful. Three types are
+scanning the whole vocabulary on every step would be wasteful. Four types are
 supported:
 
 | Type | Allowed tokens | Terminator |
 |---|---|---|
-| `number` | tokens composed only of digits, `.` and `-` | a token made only of ` ,\n\t` |
+| `number` | digits, one optional leading `-`, one optional `.` (sub-state machine) | a token made only of ` ,\n\t` |
+| `integer` | like `number` but the `.` is never allowed | a token made only of ` ,\n\t` |
 | `string` | tokens containing none of `{ } [ ] \` | a token containing `"` or a newline |
 | `boolean` | the exact tokens `true` / `false` | none (one token finishes the value) |
 
@@ -148,6 +149,13 @@ would never terminate. Note the intentional asymmetry between numbers
 (`search_any_character`: tokens that *contain* a quote) — a number must not
 swallow the comma that separates parameters, whereas a string may end with a
 quote attached to text.
+
+Numbers are not masked with a single flat set: a small sub-state machine
+(`start → sign → int → dot → frac`) changes the mask at every step, so a
+syntactically invalid number (`--`, `1.2.3`, `.`) can never be produced.
+`integer` is exactly the same machine without the `dot`/`frac` states. Each type
+is handled by its own value generator (`value_generators`), so an unknown type
+raises an error instead of silently falling back to another one.
 
 ### Step 6 — Decode and parse
 
@@ -219,10 +227,12 @@ prompt.
 
 **Reliability.** The structural guarantees are deterministic and independent of
 the model: valid JSON, the three exact keys, a `name` drawn from the provided
-definitions, and argument values respecting their declared type. The residual
-risk is model-side (wrong function or wrong value) plus one decoder edge case
-noted below (the `number` mask permits characters, not a full numeric grammar),
-and there is a `try/except` around `json.loads` as a final safety net.
+definitions, and argument values respecting their declared type. The number and
+integer masks are produced by a sub-state machine, so invalid numeric syntax is
+impossible, and every parsed value is re-checked against its declared type in
+`FunctionCaller.resolve` (a boolean can never pass as an integer). The residual
+risk is model-side only (wrong function or wrong value); a `try/except` around
+`json.loads` remains as a final safety net.
 
 **Memory.** `Qwen3-0.6B` is intentionally small; `llm_sdk` uses `float16` on
 GPU/MPS and `float32` on CPU, so the whole pipeline runs comfortably on a laptop.
@@ -257,10 +267,10 @@ GPU/MPS and `float32` on CPU, so the whole pipeline runs comfortably on a laptop
   "forcing the format harder" — documented as a model-capacity limitation rather
   than a decoder bug.
 
-- **A known decoder edge case.** The `number` mask allows digits, `.` and `-`
-  without validating numeric *syntax*, so in principle something like `1.2.3`
-  could be produced. It does not occur in the project's cases; it is documented
-  here as the boundary of what the decoder guarantees.
+- **Numeric syntax.** An early version masked numbers with a single flat set of
+  digit/`.`/`-` tokens, which could in principle emit `1.2.3`, `--` or an empty
+  value. **Solved** with a sub-state machine that switches the mask at each step
+  (see Step 5) and by re-validating the parsed value against its declared type.
 
 - **Vocabulary handling.** The model ships a large `vocab.json`; it is loaded
   once into a `VocabIndex` with bidirectional `token⇄id` maps and specialized
@@ -302,8 +312,15 @@ and manual inspection — each layer checks a different property:
    `apply_mask`, `select_best_token`, the `VocabIndex` searches) were exercised
    in isolation to confirm the masking logic before wiring it into the FSM.
 
-There is currently no `pytest` suite in the repository; the above steps are the
-project's verification procedure. Adding one would be the natural next step.
+7. **Unit tests.** `make test` runs `tests/test_value_types.py` with the standard
+   library `unittest` (no extra dependency). It covers the type schema (`integer`
+   accepted, unknown types rejected), the post-parse validator — including the
+   `bool`/`int` subclass trap — and the numeric sub-state machine (`integer`
+   cannot emit a dot, no double sign, no empty value). It uses a fake vocabulary
+   and a scripted model, so it runs without downloading the LLM.
+
+`make test` runs the suite; `make lint` and `make lint-strict` also lint and
+type-check `tests/`.
 
 ---
 
@@ -479,6 +496,10 @@ print(call.name, call.parameters)             # fn_greet {'name': 'shrek'}
 ]
 ```
 
+Every parameter (and `returns`) declares a `type`. The supported types are
+`number`, `integer`, `string` and `boolean`; any other value is rejected when
+the definitions file is loaded.
+
 ### Prompts — `data/input/function_calling_tests.json`
 
 A list of objects with a `prompt` key (plain strings are also accepted):
@@ -521,6 +542,7 @@ data/
   input/                  Function definitions and test prompts
   output/                 Generated results
 llm_sdk/                  Local inference SDK wrapping Hugging Face models
+tests/                    Unit tests (standard library unittest)
 ```
 
 ---
@@ -534,6 +556,7 @@ llm_sdk/                  Local inference SDK wrapping Hugging Face models
 | `make debug` | Run the pipeline under `pdb` (`uv run python -m pdb -m src`) |
 | `make lint` | Run flake8 and mypy |
 | `make lint-strict` | Run flake8 and mypy in `--strict` mode |
+| `make test` | Run the unit tests (`unittest`) |
 | `make clean` | Remove caches and the output directory |
 | `make fclean` | `clean` plus the local uv/HF storage |
 | `make re` | `fclean` followed by `all` |

@@ -78,7 +78,7 @@ Estos NO son solo "el modelo se equivoca": hay caracteres que el decoder
 ## 3. Selección de función
 
 - [ ] **T5. Mejorar `select_function_name` / prompt de selección** — *Impacto: tests 10, 11*
-  - Dónde: `src/prompt_builder.py` (`fun_selection`) y
+  - Dónde: `src/prompt_builder.py` (`fun_select_prompt`) y
     `src/constrained_decoder.py` (`select_function_name`, ~285-318).
   - Ideas:
     - prompt más explícito: "responde solo con el nombre exacto de la lista";

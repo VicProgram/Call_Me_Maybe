@@ -6,6 +6,7 @@ from llm_sdk import Small_LLM_Model
 from pathlib import Path
 from .tools import load_prompt, load_function_def, json_exporter
 from .function_caller import FunctionCaller
+from .models import FunctionCall
 
 
 def parse_args() -> argparse.Namespace:
@@ -74,6 +75,13 @@ def main() -> int:
     print(f"  {len(functions)} funciones cargadas")
     print(f"  {len(prompts)} prompts a procesar")
 
+    if not functions:
+        print(
+            f"Error: no hay funciones definidas en '{definitions_path}'.",
+            file=sys.stderr,
+        )
+        return 1
+
     print("\nCargando modelo LLM (puede tardar un momento)...")
     try:
         model = Small_LLM_Model()
@@ -98,7 +106,15 @@ def main() -> int:
             results.append(result)
             print(f"  ✓ {result.name}({result.parameters})")
         except Exception as e:
+
             print(f"  ✗ Error: {e}", file=sys.stderr)
+            results.append(
+                FunctionCall(
+                    prompt=prompt,
+                    name=functions[0].name,
+                    parameters={},
+                )
+            )
             errors += 1
 
     print(f"\nEscribiendo resultados en {args.output}...")

@@ -34,14 +34,17 @@ class VocabIndex:
             The parsed JSON data as a dictionary.
 
         Raises:
-            FileNotFoundError: If the file does not exist or cannot be parsed.
+            FileNotFoundError: If the file does not exist.
+            ValueError: If the file does not contain valid JSON.
         """
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-        except Exception:
-            raise FileNotFoundError("JSON not founded")
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Vocab file not found: {json_path}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid vocab JSON in {json_path}: {e}")
 
         return data  # type: ignore[no-any-return]
 
@@ -50,7 +53,16 @@ class VocabIndex:
 
         Args:
             data: The vocabulary data as a dictionary.
+
+        Raises:
+            TypeError: If the data is not a JSON object.
         """
+        if not isinstance(data, dict):
+            raise TypeError(
+                "Error: the vocabulary must be a JSON object, got "
+                f"{type(data).__name__}"
+            )
+
         self.token_to_id = data
         self.id_to_token = {v: k for k, v in data.items()}
 

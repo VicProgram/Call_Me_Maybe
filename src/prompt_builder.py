@@ -1,7 +1,7 @@
 from .models import FunctionDefinition
 
 
-def fun_selection(
+def fun_select_prompt(
         user_prompt: str, fun_list: list[FunctionDefinition]
         ) -> str:
     """Build a prompt for function selection.

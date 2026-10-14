@@ -1,10 +1,11 @@
 import os
 import json
+from pathlib import Path
 from typing import Any
 from .models import FunctionDefinition, TestPrompt, FunctionCall
 
 
-def json_reader(file_path: str) -> Any:
+def json_reader(file_path: str | Path) -> Any:
     """Read a JSON file and return its content as a Python object.
 
     Args:
@@ -15,6 +16,7 @@ def json_reader(file_path: str) -> Any:
 
     Raises:
         FileNotFoundError: If the file does not exist.
+        ValueError: If the file does not contain valid JSON.
     """
 
     try:
@@ -25,6 +27,10 @@ def json_reader(file_path: str) -> Any:
     except FileNotFoundError:
         raise FileNotFoundError(
             f"Error: The file '{file_path}' was not found."
+            )
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Invalid JSON in '{file_path}': {e}"
             )
 
 
@@ -100,6 +106,11 @@ def load_prompt(prompt_json: str) -> list[TestPrompt]:
             elif isinstance(prompt, dict):
                 prompt_obj = TestPrompt(**prompt)
                 prompt_list.append(prompt_obj)
+            else:
+                raise ValueError(
+                    f"Error: the prompt {prompt!r} is not a "
+                    "string or an object"
+                )
 
         except Exception as e:
             raise ValueError(
@@ -109,7 +120,7 @@ def load_prompt(prompt_json: str) -> list[TestPrompt]:
 
 
 def json_exporter(
-        func_call_obj: list[FunctionCall], func_call_path: str
+        func_call_obj: list[FunctionCall], func_call_path: str | Path
         ) -> None:
     """Export function call results to a JSON file.
 
@@ -123,20 +134,20 @@ def json_exporter(
     Raises:
         ValueError: If there is an error writing the output file.
     """
-    parent_dir = os.path.dirname(func_call_path)
-    if parent_dir:
-        os.makedirs(parent_dir, exist_ok=True)
-
     func_dict = []
 
     for item in func_call_obj:
         new_item = item.model_dump()
         func_dict.append(new_item)
 
-    with open(func_call_path, "w", encoding="utf-8") as f:
-        try:
+    try:
+        parent_dir = os.path.dirname(func_call_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+
+        with open(func_call_path, "w", encoding="utf-8") as f:
             json.dump(func_dict, f, indent=4)
-        except Exception as e:
-            raise ValueError(
-                f"Error creating the output: {e}"
-                )
+    except (OSError, TypeError) as e:
+        raise ValueError(
+            f"Error creating the output '{func_call_path}': {e}"
+            )
