@@ -211,9 +211,10 @@ rejected.
 
 **Accuracy.** On the project's own test set (11 prompts covering 5 functions),
 function **selection** is correct in all cases and the output is valid JSON in
-all cases — those two are guaranteed by construction and verified in
-`data/output/function_calling_results.json`. Argument **extraction** is correct
-for the arithmetic, greeting, string-reversal and square-root cases — including
+all cases — those two are guaranteed by construction and visible in the results
+that `make run` writes to `data/output/function_calling_results.json`. Argument
+**extraction** is correct for the arithmetic, greeting, string-reversal and
+square-root cases — including
 the string arguments, which now keep whatever text sits in front of their
 closing quote. The regex cases are where the model — not the decoder —
 struggles: for example `"Replace all vowels in 'Programming is fun' with
@@ -439,7 +440,7 @@ arguments), followed by a summary with the number of successes and errors.
 uv run python -m src \
     --functions_definition data/input/functions_definition.json \
     --input data/input/function_calling_tests.json \
-    --output /tmp/opencode/results.json
+    --output /tmp/results.json
 ```
 
 ### Single prompts file
