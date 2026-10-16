@@ -22,20 +22,20 @@ def parse_args() -> argparse.Namespace:
         "--functions_definition",
         type=Path,
         default=None,
-        help="Fichero JSON con las definiciones de funciones "
+        help="JSON file with the function definitions "
         "(default: <input>/functions_definition.json)"
     )
     parser.add_argument(
         "--input",
         type=Path,
         default=Path("data/input"),
-        help="Directorio o fichero de entrada (default: data/input)"
+        help="Input directory or file (default: data/input)"
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=Path("data/output/function_calling_results.json"),
-        help="Archivo de salida (default: "
+        help="Output file (default: "
         "data/output/function_calling_results.json)"
     )
     return parser.parse_args()
@@ -64,7 +64,7 @@ def main() -> int:
     else:
         definitions_path = default_definitions
 
-    print("Cargando archivos de entrada...")
+    print("Loading input files...")
     try:
         functions = load_function_def(definitions_path)
         prompts = load_prompt(tests_path)
@@ -72,34 +72,34 @@ def main() -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    print(f"  {len(functions)} funciones cargadas")
-    print(f"  {len(prompts)} prompts a procesar")
+    print(f"  {len(functions)} functions loaded")
+    print(f"  {len(prompts)} prompts to process")
 
     if not functions:
         print(
-            f"Error: no hay funciones definidas en '{definitions_path}'.",
+            f"Error: no functions defined in '{definitions_path}'.",
             file=sys.stderr,
         )
         return 1
 
-    print("\nCargando modelo LLM (puede tardar un momento)...")
+    print("\nLoading LLM model (this may take a moment)...")
     try:
         model = Small_LLM_Model()
     except Exception as e:
-        print(f"Error cargando el modelo: {e}", file=sys.stderr)
+        print(f"Error loading the model: {e}", file=sys.stderr)
         return 1
-    print("  Modelo cargado.")
+    print("  Model loaded.")
 
     caller = FunctionCaller(model)
     results = []
     errors = 0
 
-    print("\nProcesando prompts...")
+    print("\nProcessing prompts...")
     for i, prompt_item in enumerate(prompts):
         prompt = prompt_item.prompt
 
         print(f"\n[{i+1}/{len(prompts)}] {prompt[:70]}...")
-        print("  (Ejecutando inferencia, espera un momento...)")
+        print("  (Running inference, please wait...)")
 
         try:
             result = caller.resolve(prompt, functions)
@@ -117,16 +117,16 @@ def main() -> int:
             )
             errors += 1
 
-    print(f"\nEscribiendo resultados en {args.output}...")
+    print(f"\nWriting results to {args.output}...")
     try:
         json_exporter(results, args.output)
     except Exception as e:
-        print(f"Error escribiendo resultados: {e}", file=sys.stderr)
+        print(f"Error writing results: {e}", file=sys.stderr)
         return 1
 
     print(f"\n{'='*50}")
-    print(f"Completado: {len(results)} éxitos, {errors} errores")
-    print(f"Resultados en: {args.output}")
+    print(f"Completed: {len(results)} successes, {errors} errors")
+    print(f"Results in: {args.output}")
 
     return 0 if errors == 0 else 1
 

@@ -52,7 +52,7 @@ def load_function_def(fun_def_json: str) -> list[FunctionDefinition]:
 
     except Exception as e:
         raise ValueError(
-            f"Error al leer el archivo JSON '{fun_def_json}': {e}"
+            f"Error reading the JSON file '{fun_def_json}': {e}"
             )
 
     if not isinstance(data, list):
@@ -90,7 +90,7 @@ def load_prompt(prompt_json: str) -> list[TestPrompt]:
         data = json_reader(prompt_json)
     except Exception as e:
         raise ValueError(
-            f"Error al leer el archivo JSON '{prompt_json}' : {e}"
+            f"Error reading the JSON file '{prompt_json}': {e}"
             )
 
     if not isinstance(data, list):

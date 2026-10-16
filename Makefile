@@ -33,7 +33,7 @@ debug:
 	uv run python -m pdb -m src
 
 lint:
-	@echo "Comprobando linter..."
+	@echo "Checking linter..."
 	@status=0; \
 	echo ""; \
 	echo "========== FLAKE8 =========="; \
@@ -45,7 +45,7 @@ lint:
 	exit $$status
 
 lint-strict:
-	@echo "Comprobando linter (estricto)..."
+	@echo "Checking linter (strict)..."
 	@status=0; \
 	echo ""; \
 	echo "========== FLAKE8 =========="; \

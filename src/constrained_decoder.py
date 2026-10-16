@@ -84,30 +84,29 @@ def log_softmax(logits: list[float] | list[int]) -> list[float]:
     return probs
 
 
-# --- Arreglo 5: strings que respetan el JSON --------------------------------
-# Un valor de tipo string se construye con "trozos". Un trozo es una secuencia
-# que ya es válida dentro de un string JSON: caracteres normales (incluidas
-# las llaves y corchetes, que no hay que escapar) o una secuencia de escape
-# completa ("\"", "\\", "\n", "\u1234", ...). Todo lo demás (una comilla sin
-# escapar, un salto de línea crudo o una barra invertida suelta) rompería el
-# JSON y queda prohibido.
+# --- Strings that respect the JSON grammar --------------------------------
+# A string value is built from "chunks". A chunk is a sequence that is already
+# valid inside a JSON string: normal characters (including braces and
+# brackets, which do not need escaping) or a complete escape sequence
+# ("\"", "\\", "\n", "\u1234", ...). Everything else (an unescaped quote, a
+# raw newline or a lone backslash) would break the JSON and is forbidden.
 _STRING_CHUNK = re.compile(
     r'(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*'
 )
 
 
 def _first_unescaped_quote(text: str) -> int:
-    """Devuelve el índice de la primera comilla SIN escapar, o -1.
+    """Return the index of the first UNESCAPED quote, or -1.
 
-    Sirve para saber si el texto de un token cierra el string (comilla sin
-    escapar) o si es contenido: por ejemplo ``\\"`` es una comilla escapada y
-    por tanto NO cierra nada.
+    Tells whether the text of a token closes the string (unescaped quote)
+    or is content: for example ``\\"`` is an escaped quote and therefore
+    does NOT close anything.
 
     Args:
-        text: El texto que produce un token al decodificarlo.
+        text: The text that a token produces when decoded.
 
     Returns:
-        El índice de la primera comilla sin escapar, o -1 si no hay.
+        The index of the first unescaped quote, or -1 if there is none.
     """
     escaped = False
     for index, char in enumerate(text):
@@ -199,7 +198,7 @@ class JSONGenerator:
 
         Emits tokens until a string terminator is chosen. The terminator
         itself is not emitted, but the text glued in front of its closing
-        quote is kept (arreglo 4). The closing quote is added later by the
+        quote is kept. The closing quote is added later by the
         NEXT_PARAM state.
 
         Args:

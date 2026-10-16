@@ -76,35 +76,35 @@ class FunctionCaller:
         try:
             data = json.loads(raw_json)
         except json.JSONDecodeError as e:
-            raise ValueError(f"JSON inválido generado: {e} ({raw_json!r})")
+            raise ValueError(f"Invalid generated JSON: {e} ({raw_json!r})")
 
         if not isinstance(data, dict):
             raise ValueError(
-                f"El JSON generado no es un objeto: {raw_json!r}"
+                f"The generated JSON is not an object: {raw_json!r}"
             )
 
         name = data.get("name")
         parameters = data.get("parameters")
         if not isinstance(name, str) or not isinstance(parameters, dict):
             raise ValueError(
-                f"El JSON generado tiene una forma inesperada: {raw_json!r}"
+                f"The generated JSON has an unexpected shape: {raw_json!r}"
             )
 
         selected = next((f for f in fun_list if f.name == name), None)
         if selected is None:
-            raise ValueError(f"Función generada no definida: {name!r}")
+            raise ValueError(f"Generated function is not defined: {name!r}")
 
         resolved: dict[str, object] = {}
         for param_name, value in parameters.items():
             definition = selected.parameters.get(param_name)
             if definition is None:
                 raise ValueError(
-                    f"Parámetro inesperado {param_name!r} en {name!r}"
+                    f"Unexpected parameter {param_name!r} in {name!r}"
                 )
             if not value_matches(value, definition.type):
                 raise ValueError(
-                    f"El parámetro {param_name!r} de {name!r} no es un "
-                    f"{definition.type} válido: {value!r}"
+                    f"The parameter {param_name!r} of {name!r} is not a "
+                    f"valid {definition.type}: {value!r}"
                 )
             if definition.type == "number":
                 value = float(value)
