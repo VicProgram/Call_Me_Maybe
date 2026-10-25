@@ -19,7 +19,7 @@ MYPY_FLAGS  = --warn-return-any \
               --check-untyped-defs
 
 FLAKE8_EXCLUDE = --exclude=data,llm_sdk,.venv
-MYPY_EXCLUDE   = --exclude data --exclude llm_sdk --exclude .venv
+MYPY_EXCLUDE   = --exclude data --exclude llm_sdk --exclude .venv --exclude tests
 
 all: install run
 
@@ -31,6 +31,10 @@ run:
 
 debug:
 	uv run python -m pdb -m src
+
+test:
+	@echo "Running tests (no model, no torch)..."
+	uv run --no-project --with numpy --with pydantic --with pytest pytest -q
 
 lint:
 	@echo "Checking linter..."
@@ -74,4 +78,4 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all install run debug lint lint-strict clean fclean re
+.PHONY: all install run debug test lint lint-strict clean fclean re
