@@ -4,6 +4,9 @@
 
 **Function calling for LLMs through constrained decoding.**
 
+[![CI](https://github.com/VicProgram/Call_Me_Maybe/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/VicProgram/Call_Me_Maybe/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Call Me Maybe turns a natural-language request into a structured function call
 (`{"prompt": ..., "name": ..., "parameters": {...}}`) using a small language model
 (`Qwen/Qwen3-0.6B`) whose output is **never** allowed to become malformed JSON.
@@ -294,8 +297,14 @@ GPU/MPS and `float32` on CPU, so the whole pipeline runs comfortably on a laptop
 
 ## Testing strategy
 
-Validation combines the provided test set, static analysis and manual
-inspection — each layer checks a different property:
+Validation combines an automated unit suite for the deterministic components,
+the provided test set, static analysis and manual inspection — each layer checks
+a different property.
+
+The deterministic pieces are covered by `make test` (51 pytest tests) with the
+model stubbed, so the suite runs without torch, weights or network. CI executes
+it on Python 3.10 and 3.12 together with `flake8` and `mypy`. The remaining
+layers are:
 
 1. **End-to-end run.** `make run` processes
    `data/input/function_calling_tests.json` against
@@ -401,6 +410,19 @@ results file; missing parent directories are created automatically.
 ```bash
 make debug        # equivalent to: uv run python -m pdb -m src
 ```
+
+### Testing
+
+```bash
+make test
+```
+
+The suite has 51 pytest tests and covers the pydantic models, the vocabulary
+index, JSON loading/export, the prompt builder, the logits masking helpers and
+the numeric state machine. The model is stubbed with a tiny fake vocabulary, so
+the tests need **no torch install, no weights and no network**.
+
+CI runs the suite on Python 3.10 and 3.12, plus `flake8` and `mypy`.
 
 ### Linting
 
@@ -545,6 +567,7 @@ src/
   vocab.py                Token <-> id index and token searches (VocabIndex)
   models.py               Pydantic models and the JSONState enum
   tools.py                Input loaders and JSON exporter
+tests/                    Pytest suite (models, vocab, tools, decoder FSM)
 data/
   input/                  Function definitions and test prompts
   output/                 Generated results
@@ -561,6 +584,7 @@ llm_sdk/                  Local inference SDK wrapping Hugging Face models
 | `make install` | Install dependencies (`uv sync`) |
 | `make run` | Run the pipeline (`uv run python -m src`) |
 | `make debug` | Run the pipeline under `pdb` (`uv run python -m pdb -m src`) |
+| `make test` | Run the pytest suite (no model or torch needed) |
 | `make lint` | Run flake8 and mypy |
 | `make lint-strict` | Run flake8 and mypy in `--strict` mode |
 | `make clean` | Remove caches and the output directory |
